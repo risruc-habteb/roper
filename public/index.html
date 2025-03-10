@@ -23,17 +23,23 @@
         #gameInfo {
             margin: 10px;
         }
+        .centered-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
     <div id="roomBrowser">
-        <h3>Set Your Nickname (Optional)</h3>
-        <input type="text" id="nickname" placeholder="Enter nickname" maxlength="16">
-        <button onclick="setNickname()">Set Nickname</button>
-        <br><br>
-        <button onclick="createRoom()">Create Room</button>
-        <h3>Available Rooms:</h3>
-        <ul id="roomList"></ul>
+        <div class="centered-content">
+            <h3>Enter Your Nickname (Optional)</h3>
+            <input type="text" id="nickname" placeholder="Enter nickname" maxlength="16">
+            <br><br>
+            <button onclick="createRoom()">Create Room</button>
+            <h3>Available Rooms:</h3>
+            <ul id="roomList"></ul>
+        </div>
     </div>
     <div id="gameContainer" style="display: none;">
         <div id="gameInfo">
@@ -80,20 +86,19 @@
             document.getElementById('resetButton').style.display = isHost ? 'block' : 'none';
         }
 
-        function setNickname() {
+        function createRoom() {
             const input = document.getElementById('nickname').value.trim();
             if (input) {
-                nickname = input;
-                socket.emit('setNickname', nickname);
-                console.log(`Nickname set to: ${nickname}`);
+                socket.emit('setNickname', input);
             }
-        }
-
-        function createRoom() {
             socket.emit('createRoom');
         }
 
         function joinRoomById(roomId) {
+            const input = document.getElementById('nickname').value.trim();
+            if (input) {
+                socket.emit('setNickname', input);
+            }
             socket.emit('joinRoom', { roomId });
         }
 
