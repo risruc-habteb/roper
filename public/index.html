@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multiplayer Rope Game</title>
+    <style>
+        body {
+            margin: 0;
+            background: #f0f0f0;
+        }
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+        #roomBrowser {
+            margin: 20px;
+        }
+        #gameInfo {
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="roomBrowser">
+        <h3>Set Your Nickname (Optional)</h3>
+        <input type="text" id="nickname" placeholder="Enter nickname" maxlength="16">
+        <button onclick="setNickname()">Set Nickname</button>
+        <br><br>
+        <button onclick="createRoom()">Create Room</button>
+        <h3>Available Rooms:</h3>
+        <ul id="roomList"></ul>
+    </div>
+    <div id="gameContainer" style="display: none;">
+        <div id="gameInfo">
+            Room ID: <span id="currentRoomId"></span> | Host: <span id="isHost"></span>
+            <button id="resetButton" style="display: none;" onclick="resetGame()">Reset Game</button>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let myId = null;
+        let nickname = '';
+        let isHost = false;
+        let gameState = null;
+        let scaleFactor;
+        let isChatting = false;
+        let chatDraft = '';
+        let cursorVisible = true;
+        let lastBlinkTime = Date.now();
+        let messageTimestamps = {};
+        let coinData = new Map(); // Client-side coin data for animation
+
+        const VIRTUAL_WIDTH = 800;
+        const VIRTUAL_HEIGHT = 400;
+        const PLAYER_RADIUS = 10;
+        const COIN_RADIUS = 14;
+        const SPIN_SPEED = 4 * Math.PI; // Speed of spinning animation
+        const ROTATION_SPEED = Math.PI; // Speed of rotation around center
+        const COIN_LIFETIME = 5; // Matches server-side COIN_LIFETIME
+
+        // UI Functions
+        function showRoomBrowser() {
+            document.getElementById('roomBrowser').style.display = 'block';
+            document.getElementById('gameContainer').style.display = 'none';
+        }
+
+        function showGame() {
+            document.getElementById('roomBrowser').style.display = 'none';
+            document.getElementById('gameContainer').style.display = 'flex';
+            document.getElementById('resetButton').style.display = isHost ? 'block' : 'none';
+        }
+
+        function setNickname() {
+            const input = document.getElementById('nickname').value.trim();
+            if (input) {
+                nickname = input;
+                socket.emit('setNickname', nickname);
+                console.log(`Nickname set to: ${nickname}`);
+            }
+        }
+
+        function createRoom() {
+            socket.emit('createRoom');
+        }
+
+        function joinRoomById(roomId) {
+            socket.emit('joinRoom', { roomId });
+        }
+
+        function resetGame() {
+            socket.emit('resetGame');
+        }
+
+        function resizeCanvas() {
+            let width = window.innerWidth * 0.95;
+            let height = window.innerHeight * 0.95;
+            const aspectRatio = VIRTUAL_WIDTH / VIRTUAL_HEIGHT;
+            if (width / height > aspectRatio) {
+                width = height * aspectRatio;
+            } else {
+                height = width / aspectRatio;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            scaleFactor = width / VIRTUAL_WIDTH;
+        }
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        socket.on('connect', () => {
+            myId = socket.id;
+        });
+
+        socket.on('roomJoined', ({ roomId, isHost: hostStatus }) => {
+            isHost = hostStatus;
+            document.getElementById('currentRoomId').textContent = roomId;
+            document.getElementById('isHost').textContent = isHost ? 'Yes' : 'No';
+            showGame();
+        });
+
+        socket.on('roomList', (rooms) => {
+            const roomList = document.getElementById('roomList');
+            roomList.innerHTML = '';
+            rooms.forEach(room => {
+                const li = document.createElement('li');
+                li.textContent = room.name;
+                const joinBtn = document.createElement('button');
+                joinBtn.textContent = 'Join';
+                joinBtn.onclick = () => joinRoomById(room.id);
+                li.appendChild(joinBtn);
+                roomList.appendChild(li);
+            });
+        });
+
+        socket.on('gameState', (state) => {
+            gameState = state;
+            updateCoinData();
+            render();
+        });
+
+        socket.on('error', (msg) => {
+            alert(msg);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (!gameState || gameState.state !== 'playing') return;
+
+            if (e.key === 't' && !isChatting) {
+                startChat();
+                e.preventDefault();
+                return;
+            }
+
+            if (isChatting) {
+                if (e.key === 'Enter') {
+                    sendChat();
+                    e.preventDefault();
+                } else if (e.key === 'Escape') {
+                    stopChat();
+                    e.preventDefault();
+                } else if (e.key === 'Backspace') {
+                    chatDraft = chatDraft.slice(0, -1);
+                    e.preventDefault();
+                } else if (e.key.length === 1 && chatDraft.length < 50) {
+                    chatDraft += e.key;
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            const input = {};
+            if (e.key === 'a') input.left = true;
+            if (e.key === 'd') input.right = true;
+            if (e.key === 'w') input.up = true;
+            if (e.key === 's') input.down = true;
+            if (e.key === ' ') input.jump = true;
+            socket.emit('input', input);
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (!gameState || gameState.state !== 'playing' || isChatting) return;
+
+            const input = {};
+            if (e.key === 'a') input.left = false;
+            if (e.key === 'd') input.right = false;
+            if (e.key === 'w') input.up = false;
+            if (e.key === 's') input.down = false;
+            if (e.key === ' ') input.jump = false;
+            socket.emit('input', input);
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (!gameState || gameState.state !== 'playing' || isChatting) return;
+            const rect = canvas.getBoundingClientRect();
+            const ropeX = (e.clientX - rect.left) / scaleFactor;
+            const ropeY = (e.clientY - rect.top) / scaleFactor;
+            socket.emit('input', { rope: true, ropeX, ropeY });
+            setTimeout(() => socket.emit('input', { rope: false }), 100);
+        });
+
+        function startChat() {
+            if (!gameState.players.find(p => p.id === myId)) return;
+            isChatting = true;
+            chatDraft = '';
+        }
+
+        function sendChat() {
+            if (chatDraft.trim()) {
+                socket.emit('input', { chat: chatDraft.trim() });
+            }
+            stopChat();
+        }
+
+        function stopChat() {
+            isChatting = false;
+            chatDraft = '';
+        }
+
+        // Client-side coin animation management
+        function updateCoinData() {
+            const now = Date.now();
+            gameState.coins.forEach((coin, index) => {
+                if (!coinData.has(index)) {
+                    // Initialize animation data for new coins
+                    const angle = Math.random() * 2 * Math.PI;
+                    const rotation = Math.random() * 2 * Math.PI;
+                    const pixels = [];
+                    for (let pi = 0; pi < 10; pi++) {
+                        for (let pj = 0; pj < 10; pj++) {
+                            const cellX = pi * 5;
+                            const cellY = pj * 5;
+                            const cx = cellX + 2.5;
+                            const cy = cellY + 2.5;
+                            const dx = cx - 25;
+                            const dy = cy - 25;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < 25) pixels.push({ x: cellX, y: cellY });
+                        }
+                    }
+                    const pixelOrder = [...pixels];
+                    for (let k = pixelOrder.length - 1; k > 0; k--) {
+                        const l = Math.floor(Math.random() * (k + 1));
+                        [pixelOrder[k], pixelOrder[l]] = [pixelOrder[l], pixelOrder[k]];
+                    }
+                    coinData.set(index, {
+                        angle,
+                        rotation,
+                        totalPixels: pixels.length,
+                        pixelOrder,
+                        lastUpdate: now
+                    });
+                } else {
+                    // Update existing coin animation
+                    const data = coinData.get(index);
+                    const dt = (now - data.lastUpdate) / 1000;
+                    data.angle += SPIN_SPEED * dt;
+                    data.rotation += ROTATION_SPEED * dt;
+                    data.lastUpdate = now;
+                }
+            });
+            // Clean up data for removed coins
+            for (let key of coinData.keys()) {
+                if (key >= gameState.coins.length) coinData.delete(key);
+            }
+        }
+
+        function renderCoin(coin, index) {
+            const data = coinData.get(index);
+            if (!data) return;
+
+            // Create off-screen canvas for coin rendering
+            const coinCanvas = document.createElement('canvas');
+            coinCanvas.width = 50;
+            coinCanvas.height = 50;
+            const coinCtx = coinCanvas.getContext('2d');
+
+            // Calculate scale for flipping
+            const scaleX = Math.cos(data.angle);
+
+            // Save context and apply scaling centered at (25, 25)
+            coinCtx.save();
+            coinCtx.translate(25, 25);
+            coinCtx.scale(scaleX, 1);
+
+            // Draw the coin
+            coinCtx.fillStyle = 'gold';
+            coinCtx.beginPath();
+            coinCtx.arc(0, 0, 25, 0, 2 * Math.PI);
+            coinCtx.fill();
+            coinCtx.restore();
+
+            // Apply pixelated disappearance based on lifetime
+            if (coin.lifetime > 0) {
+                const timeElapsed = COIN_LIFETIME * 1000 - coin.lifetime;
+                const pixelsToRemove = Math.floor(timeElapsed / (COIN_LIFETIME * 1000 / data.totalPixels));
+                const visibleCount = Math.max(0, data.totalPixels - pixelsToRemove);
+                if (visibleCount < data.pixelOrder.length) {
+                    coinCtx.save();
+                    coinCtx.translate(25, 25);
+                    coinCtx.scale(scaleX, 1); // Apply the same scaling to the mask
+                    for (let i = data.pixelOrder.length - 1; i >= visibleCount; i--) {
+                        const pixel = data.pixelOrder[i];
+                        coinCtx.clearRect(pixel.x - 25, pixel.y - 25, 5, 5); // Offset to center
+                    }
+                    coinCtx.restore();
+                }
+            }
+
+            // Draw outlines for 3D effect *after* pixelation
+            coinCtx.save();
+            coinCtx.translate(25, 25);
+            coinCtx.scale(scaleX, 1);
+            const sinAngle = Math.sin(data.angle);
+            const leftLineWidth = Math.max(0, 0.5 - 2.5 * sinAngle);
+            const rightLineWidth = Math.max(0, 0.5 + 2.5 * sinAngle);
+            coinCtx.strokeStyle = 'black';
+            coinCtx.lineWidth = rightLineWidth;
+            coinCtx.beginPath();
+            coinCtx.arc(0, 0, 25, 0, Math.PI / 2);
+            coinCtx.stroke();
+            coinCtx.lineWidth = leftLineWidth;
+            coinCtx.beginPath();
+            coinCtx.arc(0, 0, 25, Math.PI / 2, 3 * Math.PI / 2);
+            coinCtx.stroke();
+            coinCtx.lineWidth = rightLineWidth;
+            coinCtx.beginPath();
+            coinCtx.arc(0, 0, 25, 3 * Math.PI / 2, 2 * Math.PI);
+            coinCtx.stroke();
+            coinCtx.restore();
+
+            // Draw the coin with rotation on the main canvas
+            ctx.save();
+            ctx.translate(coin.x, coin.y);
+            ctx.rotate(data.rotation);
+            ctx.drawImage(coinCanvas, -COIN_RADIUS, -COIN_RADIUS, 2 * COIN_RADIUS, 2 * COIN_RADIUS);
+            ctx.restore();
+        }
+
+        function render() {
+            if (!gameState) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.scale(scaleFactor, scaleFactor);
+
+            // Draw terrain
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2 / scaleFactor;
+            for (let i = 0; i < gameState.terrain.x.length - 1; i++) {
+                ctx.beginPath();
+                ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yFloor[i]);
+                ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yFloor[i + 1]);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yCeiling[i]);
+                ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yCeiling[i + 1]);
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.moveTo(0, gameState.terrain.yCeiling[0]);
+            ctx.lineTo(0, gameState.terrain.yFloor[0]);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(VIRTUAL_WIDTH, gameState.terrain.yCeiling[gameState.terrain.x.length - 1]);
+            ctx.lineTo(VIRTUAL_WIDTH, gameState.terrain.yFloor[gameState.terrain.x.length - 1]);
+            ctx.stroke();
+
+            // Draw coins
+            gameState.coins.forEach((coin, index) => renderCoin(coin, index));
+
+            const now = Date.now();
+            if (now - lastBlinkTime > 500) {
+                cursorVisible = !cursorVisible;
+                lastBlinkTime = now;
+            }
+
+            // Draw players, ropes, and chat
+            gameState.players.forEach(player => {
+                if (player.rope.state !== 'none') {
+                    ctx.strokeStyle = '#888';
+                    ctx.lineWidth = 1 / scaleFactor;
+                    ctx.beginPath();
+                    ctx.moveTo(player.x, player.y);
+                    if (player.rope.state === 'attached') {
+                        ctx.lineTo(player.rope.tx, player.rope.ty);
+                    } else {
+                        ctx.lineTo(player.rope.x, player.rope.y);
+                    }
+                    ctx.stroke();
+                }
+
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                ctx.rotate(player.rotation);
+                ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
+                ctx.strokeStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.fillStyle = 'black';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(player.displayName, player.x, player.y - 15);
+
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                let messageCount = player.chatMessages ? player.chatMessages.length : 0;
+                if (player.id === myId && isChatting) {
+                    const displayText = chatDraft + (cursorVisible ? '|' : '');
+                    ctx.fillStyle = 'grey';
+                    ctx.fillText(displayText, player.x, player.y - 25 - messageCount * 12);
+                    messageCount++;
+                }
+                if (player.chatMessages && player.chatMessages.length > 0) {
+                    player.chatMessages.forEach((msg, index) => {
+                        const key = `${player.id}-${msg.id}`;
+                        if (!messageTimestamps[key]) messageTimestamps[key] = now;
+                        const age = (now - messageTimestamps[key]) / 1000;
+                        let alpha = 1;
+                        if (age > 5) alpha = Math.max(0, 1 - (age - 5) / 0.5);
+                        if (msg.fadeNow) alpha = 0;
+                        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+                        const yOffset = -25 - index * 12 - (player.id === myId && isChatting ? 12 : 0);
+                        ctx.fillText(msg.text, player.x, player.y + yOffset);
+                    });
+                }
+            });
+
+            if (gameState.state === 'playing') {
+                ctx.font = `${20 * scaleFactor}px Consolas`;
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Time: ${Math.ceil(gameState.timer / 1000)}s`, 10, 30);
+                gameState.players.forEach((player, index) => {
+                    ctx.fillText(`${player.displayName}: ${player.score}`, 10, 60 + index * 30);
+                });
+            } else if (gameState.state === 'gameOver') {
+                ctx.font = `${40 * scaleFactor}px Consolas`;
+                ctx.fillStyle = 'red';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 - 50);
+                ctx.font = `${20 * scaleFactor}px Consolas`;
+                gameState.players.forEach((player, index) => {
+                    ctx.fillText(`${player.displayName}: ${player.score}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + index * 30);
+                });
+            }
+
+            ctx.restore();
+        }
+
+        showRoomBrowser();
+    </script>
+</body>
+</html>
