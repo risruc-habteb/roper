@@ -17,6 +17,15 @@ app.get('/', (req, res) => {
 
 const rooms = {};
 
+// Create the persistent lobby room
+const lobbyRoomId = 'lobby';
+rooms[lobbyRoomId] = {
+  game: new Game(lobbyRoomId, Infinity), // No time limit
+  players: [],
+  name: 'Lobby',
+  host: null // No specific host, as it’s persistent
+};
+
 io.on('connection', (socket) => {
   socket.nickname = null; // Nickname is optional, null by default
   let currentRoom = '';
@@ -40,7 +49,7 @@ io.on('connection', (socket) => {
     const roomId = Math.random().toString(36).substring(7);
     const roomName = `${displayName}'s Room`;
     rooms[roomId] = {
-      game: new Game(roomId),
+      game: new Game(roomId, 60), // Default to 60s
       players: [{ id: socket.id, displayName }],
       name: roomName,
       host: socket.id // The creator is the host
@@ -55,7 +64,7 @@ io.on('connection', (socket) => {
 
   // Join a room, using nickname or socket ID
   socket.on('joinRoom', ({ roomId }) => {
-    if (rooms[roomId] && rooms[roomId].players.length < 10) {
+    if (rooms[roomId] && (rooms[roomId].players.length < 10 || roomId === lobbyRoomId)) {
       const displayName = socket.nickname || socket.id;
       socket.join(roomId);
       currentRoom = roomId;
@@ -92,7 +101,7 @@ io.on('connection', (socket) => {
       io.to(currentRoom).emit('playerLeft', displayName);
       rooms[currentRoom].game.removePlayer(socket.id);
       rooms[currentRoom].players = rooms[currentRoom].players.filter(p => p.id !== socket.id);
-      if (rooms[currentRoom].players.length === 0) {
+      if (rooms[currentRoom].players.length === 0 && currentRoom !== lobbyRoomId) {
         delete rooms[currentRoom];
         console.log(`Room ${currentRoom} deleted due to all players disconnecting`);
       }
@@ -109,7 +118,7 @@ io.on('connection', (socket) => {
 // Broadcast available rooms to all clients
 function broadcastRoomList() {
   const availableRooms = Object.entries(rooms)
-    .filter(([_, room]) => room.players.length < 10)
+    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
     .map(([roomId, room]) => ({ id: roomId, name: room.name }));
   console.log('Broadcasting room list:', availableRooms);
   io.emit('roomList', availableRooms);
@@ -118,7 +127,7 @@ function broadcastRoomList() {
 // Send room list to a specific socket
 function sendRoomList(socket) {
   const availableRooms = Object.entries(rooms)
-    .filter(([_, room]) => room.players.length < 10)
+    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
     .map(([roomId, room]) => ({ id: roomId, name: room.name }));
   console.log(`Sending room list to ${socket.id}:`, availableRooms);
   socket.emit('roomList', availableRooms);
