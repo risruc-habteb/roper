@@ -24,9 +24,6 @@ const JUMP_VELOCITY = -300;
 const COIN_LIFETIME = 5;
 const COIN_SPAWN_INTERVAL = 2;
 const COLLISION_ENERGY_LOSS = 0.5;
-const CHAT_MESSAGE_LIFETIME = 5000;
-const CHAT_FADE_DURATION = 500;
-const MAX_CHAT_MESSAGES = 5;
 
 // Simple noise function for terrain generation
 function generateNoise(n, k) {
@@ -159,14 +156,9 @@ class Game {
         const message = {
           id: player.nextMessageId++,
           text: input.chat,
-          timestamp: Date.now(),
-          fadeNow: false
+          timestamp: Date.now()
         };
         player.chatMessages.unshift(message);
-        if (player.chatMessages.length > MAX_CHAT_MESSAGES) {
-          player.chatMessages.slice(0, MAX_CHAT_MESSAGES - 1).forEach(msg => msg.fadeNow = true);
-          player.chatMessages = player.chatMessages.slice(0, MAX_CHAT_MESSAGES);
-        }
       }
     }
   }
