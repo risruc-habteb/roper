@@ -9,7 +9,6 @@ const GROUND_FRICTION = 100;
 const MAX_SPEED_ALONG_SLOPE = 150;
 const ROPE_SPEED = 1200;
 const ROPE_MAX_LENGTH = 450;
-const GAME_DURATION = 60000;
 const WIDTH = 800;
 const HEIGHT = 400;
 const N_TERRAIN_SEGMENTS = 25;
@@ -60,12 +59,14 @@ function lineLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
 }
 
 class Game {
-  constructor(roomId) {
+  constructor(roomId, duration) {
     this.roomId = roomId;
     this.players = {};
     this.coins = [];
+    this.chatHistory = []; // Added for global chat log
     this.state = 'playing';
-    this.timer = GAME_DURATION;
+    this.timer = duration === Infinity ? Infinity : duration * 1000; // Convert seconds to milliseconds, or Infinity
+    this.duration = duration; // Store original duration in seconds
     this.x = [];
     this.yFloor = [];
     this.yCeiling = [];
@@ -156,9 +157,12 @@ class Game {
         const message = {
           id: player.nextMessageId++,
           text: input.chat,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          sender: player.displayName // Include sender name for chat log
         };
         player.chatMessages.unshift(message);
+        this.chatHistory.unshift(message); // Add to global chat history
+        if (this.chatHistory.length > 50) this.chatHistory.pop(); // Limit history to 50 messages
       }
     }
   }
@@ -166,10 +170,12 @@ class Game {
   update(dt) {
     if (this.state !== 'playing') return;
 
-    this.timer -= dt;
-    if (this.timer <= 0) {
-      this.state = 'gameOver';
-      return;
+    if (this.timer !== Infinity) {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.state = 'gameOver';
+        return;
+      }
     }
 
     this.coinSpawnTimer -= dt;
@@ -382,7 +388,7 @@ class Game {
   reset() {
     this.generateTerrain();
     this.state = 'playing';
-    this.timer = GAME_DURATION;
+    this.timer = this.duration === Infinity ? Infinity : this.duration * 1000;
     this.coins = [];
     this.coinSpawnTimer = COIN_SPAWN_INTERVAL * 1000;
     for (const id in this.players) {
@@ -408,8 +414,10 @@ class Game {
       roomId: this.roomId,
       players: Object.values(this.players),
       coins: this.coins,
+      chatHistory: this.chatHistory, // Include chat history in state
       state: this.state,
       timer: this.timer,
+      duration: this.duration, // Include original duration
       terrain: { x: this.x, yFloor: this.yFloor, yCeiling: this.yCeiling }
     };
   }

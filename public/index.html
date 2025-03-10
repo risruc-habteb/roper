@@ -36,6 +36,14 @@
             <h3>Enter Your Nickname (Optional)</h3>
             <input type="text" id="nickname" placeholder="Enter nickname" maxlength="16">
             <br><br>
+            <h3>Game Duration</h3>
+            <select id="durationSelect">
+                <option value="30">30s</option>
+                <option value="60" selected>60s</option>
+                <option value="120">120s</option>
+                <option value="Infinity">∞</option>
+            </select>
+            <br><br>
             <button onclick="createRoom()">Create Room</button>
             <h3>Available Rooms:</h3>
             <ul id="roomList"></ul>
@@ -63,17 +71,23 @@
         let chatDraft = '';
         let cursorVisible = true;
         let lastBlinkTime = Date.now();
-        let coinData = new Map(); // Client-side coin data for animation
+        let coinData = new Map();
 
         const VIRTUAL_WIDTH = 800;
         const VIRTUAL_HEIGHT = 400;
         const PLAYER_RADIUS = 10;
         const COIN_RADIUS = 14;
-        const SPIN_SPEED = 4 * Math.PI; // Speed of spinning animation
-        const ROTATION_SPEED = Math.PI; // Speed of rotation around center
-        const COIN_LIFETIME = 5; // Matches server-side COIN_LIFETIME
-        const CHAT_LINE_HEIGHT = 12; // Line height for chat messages
-        const MAX_CHAT_MESSAGES = 5; // Maximum number of messages to display
+        const SPIN_SPEED = 4 * Math.PI;
+        const ROTATION_SPEED = Math.PI;
+        const COIN_LIFETIME = 5;
+        const CHAT_LINE_HEIGHT = 12;
+        const MAX_CHAT_MESSAGES = 5;
+        const CHAT_LOG_X = VIRTUAL_WIDTH - 120; // Moved further right from 650 to 680
+        const CHAT_LOG_MAX_LINES = 20;
+        const CHAT_LOG_TOP = VIRTUAL_HEIGHT * 0.1;
+        const CHAT_LOG_BOTTOM = VIRTUAL_HEIGHT * 0.9;
+        const CHAT_FONT_SIZE = 8; // Decreased from 10 to 8
+        const maxMessageWidth = 110; // Adjusted for ~20 characters at 8px font
 
         // UI Functions
         function showRoomBrowser() {
@@ -89,10 +103,12 @@
 
         function createRoom() {
             const input = document.getElementById('nickname').value.trim();
+            const duration = document.getElementById('durationSelect').value;
+            const durationValue = duration === 'Infinity' ? Infinity : parseInt(duration);
             if (input) {
                 socket.emit('setNickname', input);
             }
-            socket.emit('createRoom');
+            socket.emit('createRoom', { duration: durationValue });
         }
 
         function joinRoomById(roomId) {
@@ -233,7 +249,6 @@
             chatDraft = '';
         }
 
-        // Client-side coin animation management
         function updateCoinData() {
             const now = Date.now();
             gameState.coins.forEach((coin, index) => {
@@ -343,6 +358,25 @@
             ctx.restore();
         }
 
+        function wrapText(text, maxWidth) {
+            const words = text.split(' ');
+            const lines = [];
+            let currentLine = words[0];
+
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                const width = ctx.measureText(currentLine + ' ' + word).width;
+                if (width < maxWidth) {
+                    currentLine += ' ' + word;
+                } else {
+                    lines.push(currentLine);
+                    currentLine = word;
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        }
+
         function render() {
             if (!gameState) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -417,16 +451,14 @@
 
                 ctx.font = '10px Arial';
                 ctx.textAlign = 'center';
-                const baseChatY = player.y - 25; // Fixed baseline for new message
+                const baseChatY = player.y - 25;
 
-                // Draw chat input if this is the local player and chatting
                 if (player.id === myId && isChatting) {
                     const displayText = chatDraft + (cursorVisible ? '|' : '');
                     ctx.fillStyle = 'grey';
                     ctx.fillText(displayText, player.x, baseChatY);
                 }
 
-                // Draw existing messages, showing only the 5 most recent
                 if (player.chatMessages && player.chatMessages.length > 0) {
                     const visibleMessages = player.chatMessages.slice(0, MAX_CHAT_MESSAGES);
                     visibleMessages.forEach((msg, index) => {
@@ -436,17 +468,47 @@
                             alpha = Math.max(0, 1 - (age - 5) / 0.5);
                         }
                         ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
-                        const yOffset = baseChatY - (index + 1) * CHAT_LINE_HEIGHT; // Stack upwards
+                        const yOffset = baseChatY - (index + 1) * CHAT_LINE_HEIGHT;
                         ctx.fillText(msg.text, player.x, yOffset);
                     });
                 }
             });
 
+            // Draw chat log
+            if (gameState.chatHistory && gameState.chatHistory.length > 0) {
+                ctx.font = `${CHAT_FONT_SIZE}px Arial`;
+                const availableHeight = CHAT_LOG_BOTTOM - CHAT_LOG_TOP;
+                let totalHeight = 0;
+                const messagesToRender = [];
+                for (let i = 0; i < gameState.chatHistory.length; i++) {
+                    const message = gameState.chatHistory[i]; // from newest to oldest
+                    const lines = wrapText(message.text, maxMessageWidth);
+                    const messageHeight = lines.length * CHAT_LINE_HEIGHT;
+                    if (totalHeight + messageHeight > availableHeight) break;
+                    messagesToRender.push({message, lines});
+                    totalHeight += messageHeight;
+                }
+                let y = CHAT_LOG_BOTTOM - totalHeight;
+                const usernameX = CHAT_LOG_X - 5;
+                const messageX = CHAT_LOG_X;
+                for (const {message, lines} of [...messagesToRender].reverse()) { // from oldest to newest
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = 'black';
+                    ctx.fillText(message.sender + ':', usernameX, y);
+                    ctx.textAlign = 'left';
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, messageX, y + index * CHAT_LINE_HEIGHT);
+                    });
+                    y += lines.length * CHAT_LINE_HEIGHT;
+                }
+            }
+
             if (gameState.state === 'playing') {
                 ctx.font = `${20 * scaleFactor}px Consolas`;
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'left';
-                ctx.fillText(`Time: ${Math.ceil(gameState.timer / 1000)}s`, 10, 30);
+                const timeText = gameState.timer === Infinity ? 'Time: ∞' : `Time: ${Math.ceil(gameState.timer / 1000)}s`;
+                ctx.fillText(timeText, 10, 30);
                 gameState.players.forEach((player, index) => {
                     ctx.fillText(`${player.displayName}: ${player.score}`, 10, 60 + index * 30);
                 });
