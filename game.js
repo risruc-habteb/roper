@@ -1,7 +1,6 @@
 // game.js (Server-side)
 
 // Constants
-const ADAMGAY =69;
 const PLAYER_SPEED = 100;
 const AIR_ACCELERATION = 500;
 const AIR_FRICTION = 50;
