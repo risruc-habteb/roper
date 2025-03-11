@@ -23,6 +23,13 @@ const JUMP_VELOCITY = -300;
 const COIN_LIFETIME = 5;
 const COIN_SPAWN_INTERVAL = 2;
 const COLLISION_ENERGY_LOSS = 0.5;
+const BAZOOKA_CHARGE_TIME = 2;
+const BAZOOKA_MAX_VELOCITY = 600;
+const BAZOOKA_MIN_VELOCITY = 200;
+const BLAST_RADIUS = 50;
+const BLAST_DURATION = 0.3;
+const BLAST_KNOCKBACK = 800;
+const BAZOOKA_COOLDOWN = 1;
 
 // Simple noise function for terrain generation
 function generateNoise(n, k) {
@@ -63,10 +70,12 @@ class Game {
     this.roomId = roomId;
     this.players = {};
     this.coins = [];
-    this.chatHistory = []; // Added for global chat log
+    this.projectiles = [];
+    this.blasts = [];
+    this.chatHistory = [];
     this.state = 'playing';
-    this.timer = duration === Infinity ? Infinity : duration * 1000; // Convert seconds to milliseconds, or Infinity
-    this.duration = duration; // Store original duration in seconds
+    this.timer = duration === Infinity ? Infinity : duration * 1000;
+    this.duration = duration;
     this.x = [];
     this.yFloor = [];
     this.yCeiling = [];
@@ -135,13 +144,15 @@ class Game {
       vy: 0,
       score: 0,
       rotation: 0,
-      input: { left: false, right: false, up: false, down: false, jump: false, rope: false, ropeX: 0, ropeY: 0, chat: null },
+      input: { left: false, right: false, up: false, down: false, jump: false, rope: false, ropeX: 0, ropeY: 0, chat: null, bazooka: false, bazookaX: 0, bazookaY: 0 },
       rope: { state: 'none', x: 0, y: 0, tx: 0, ty: 0, length: 0, dx: 0, dy: 0 },
+      bazooka: { charge: 0, lastShot: 0 }, // Initialize lastShot to 0
       chatMessages: [],
       nextMessageId: 0,
       onGround: false,
       lastRopeInput: false,
-      lastJumpInput: false
+      lastJumpInput: false,
+      lastBazookaInput: false
     };
   }
 
@@ -153,16 +164,19 @@ class Game {
     if (this.players[id]) {
       const player = this.players[id];
       player.input = { ...player.input, ...input };
+      if (input.bazooka !== undefined) {
+        console.log(`Player ${id} bazooka input: ${input.bazooka}, x: ${input.bazookaX}, y: ${input.bazookaY}`);
+      }
       if (input.chat) {
         const message = {
           id: player.nextMessageId++,
           text: input.chat,
           timestamp: Date.now(),
-          sender: player.displayName // Include sender name for chat log
+          sender: player.displayName
         };
         player.chatMessages.unshift(message);
-        this.chatHistory.unshift(message); // Add to global chat history
-        if (this.chatHistory.length > 50) this.chatHistory.pop(); // Limit history to 50 messages
+        this.chatHistory.unshift(message);
+        if (this.chatHistory.length > 50) this.chatHistory.pop();
       }
     }
   }
@@ -186,19 +200,77 @@ class Game {
 
     const dtSeconds = dt / 1000;
 
-    // Update coins' lifetime
-    this.coins.forEach(coin => {
-      coin.lifetime -= dt;
+    this.coins.forEach(coin => coin.lifetime -= dt);
+
+    this.blasts = this.blasts.filter(blast => {
+      blast.time += dtSeconds;
+      return blast.time < BLAST_DURATION;
     });
 
-    // Update each player
+    this.projectiles = this.projectiles.filter(proj => {
+      proj.x += proj.vx * dtSeconds;
+      proj.y += proj.vy * dtSeconds;
+      proj.vy += GRAVITY * dtSeconds;
+
+      for (let line of this.terrainLines) {
+        const intersect = lineLineIntersection(
+          proj.x - proj.vx * dtSeconds, proj.y - proj.vy * dtSeconds,
+          proj.x, proj.y,
+          line.p1.x, line.p1.y,
+          line.p2.x, line.p2.y
+        );
+        if (intersect) {
+          this.blasts.push({ x: intersect.x, y: intersect.y, time: 0 });
+          return false;
+        }
+      }
+
+      for (let id in this.players) {
+        const player = this.players[id];
+        if (player.id !== proj.owner) {
+          const dx = player.x - proj.x;
+          const dy = player.y - proj.y;
+          if (dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS) {
+            this.blasts.push({ x: proj.x, y: proj.y, time: 0 });
+            return false;
+          }
+        }
+      }
+
+      return proj.x >= 0 && proj.x <= WIDTH && proj.y >= 0 && proj.y <= HEIGHT;
+    });
+
     for (const id in this.players) {
       const player = this.players[id];
       const input = player.input;
 
       const wasOnGround = player.onGround;
 
-      // Rope firing from player's center
+      const now = Date.now();
+      if (input.bazooka && !player.lastBazookaInput && (now - player.bazooka.lastShot) >= BAZOOKA_COOLDOWN * 1000) {
+        player.bazooka.charge += dtSeconds;
+        console.log(`Player ${id} charging bazooka: ${player.bazooka.charge}`);
+        if (player.bazooka.charge > BAZOOKA_CHARGE_TIME) player.bazooka.charge = 0;
+      } else if (!input.bazooka && player.lastBazookaInput && player.bazooka.charge > 0) {
+        const chargeRatio = Math.min(player.bazooka.charge / BAZOOKA_CHARGE_TIME, 1);
+        const velocity = BAZOOKA_MIN_VELOCITY + chargeRatio * (BAZOOKA_MAX_VELOCITY - BAZOOKA_MIN_VELOCITY);
+        const dx = input.bazookaX - player.x;
+        const dy = input.bazookaY - player.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) { // Prevent division by zero
+          this.projectiles.push({
+            x: player.x,
+            y: player.y,
+            vx: (dx / len) * velocity,
+            vy: (dy / len) * velocity,
+            owner: id
+          });
+          console.log(`Player ${id} fired bazooka: velocity=${velocity}, projectiles=${this.projectiles.length}`);
+          player.bazooka.lastShot = now;
+          player.bazooka.charge = 0;
+        }
+      }
+
       if (player.rope.state === 'none' && input.rope && !player.lastRopeInput) {
         player.rope.state = 'firing';
         player.rope.x = player.x;
@@ -336,6 +408,20 @@ class Game {
         player.y += player.vy * dtSeconds;
       }
 
+      for (let blast of this.blasts) {
+        const dx = player.x - blast.x;
+        const dy = player.y - blast.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < BLAST_RADIUS) {
+          const force = BLAST_KNOCKBACK * (1 - dist / BLAST_RADIUS);
+          const dirX = dx / dist || 0;
+          const dirY = dy / dist || 0;
+          player.vx += dirX * force;
+          player.vy += dirY * force;
+          if (player.rope.state === 'attached') player.rope.state = 'none';
+        }
+      }
+
       if (player.x < PLAYER_RADIUS) {
         player.x = PLAYER_RADIUS;
         if (player.vx < 0) player.vx = -player.vx * COLLISION_ENERGY_LOSS;
@@ -366,9 +452,9 @@ class Game {
 
       player.lastRopeInput = input.rope;
       player.lastJumpInput = input.jump;
+      player.lastBazookaInput = input.bazooka;
     }
 
-    // Handle coin collection after player updates
     this.coins = this.coins.filter(coin => {
       let keep = true;
       for (const id in this.players) {
@@ -390,6 +476,8 @@ class Game {
     this.state = 'playing';
     this.timer = this.duration === Infinity ? Infinity : this.duration * 1000;
     this.coins = [];
+    this.projectiles = [];
+    this.blasts = [];
     this.coinSpawnTimer = COIN_SPAWN_INTERVAL * 1000;
     for (const id in this.players) {
       const player = this.players[id];
@@ -400,11 +488,13 @@ class Game {
       player.score = 0;
       player.rotation = 0;
       player.rope = { state: 'none', x: 0, y: 0, tx: 0, ty: 0, length: 0, dx: 0, dy: 0 };
+      player.bazooka = { charge: 0, lastShot: 0 };
       player.chatMessages = [];
       player.nextMessageId = 0;
       player.onGround = false;
       player.lastRopeInput = false;
       player.lastJumpInput = false;
+      player.lastBazookaInput = false;
     }
     this.spawnCoin();
   }
@@ -414,10 +504,12 @@ class Game {
       roomId: this.roomId,
       players: Object.values(this.players),
       coins: this.coins,
-      chatHistory: this.chatHistory, // Include chat history in state
+      projectiles: this.projectiles,
+      blasts: this.blasts,
+      chatHistory: this.chatHistory,
       state: this.state,
       timer: this.timer,
-      duration: this.duration, // Include original duration
+      duration: this.duration,
       terrain: { x: this.x, yFloor: this.yFloor, yCeiling: this.yCeiling }
     };
   }

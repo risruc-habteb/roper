@@ -1,143 +1,70 @@
+// server.js
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const path = require('path');
 const Game = require('./game.js');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+const games = {};
 
-// Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-const rooms = {};
-
-// Create the persistent lobby room
-const lobbyRoomId = 'lobby';
-rooms[lobbyRoomId] = {
-  game: new Game(lobbyRoomId, Infinity), // No time limit
-  players: [],
-  name: 'Lobby',
-  host: null // No specific host, as it’s persistent
-};
+app.use(express.static(__dirname)); // Serve static files (e.g., index.html)
 
 io.on('connection', (socket) => {
-  socket.nickname = null; // Nickname is optional, null by default
-  let currentRoom = '';
+  console.log('Client connected:', socket.id);
 
-  console.log('A player connected:', socket.id);
-
-  // Send room list to the newly connected client
-  sendRoomList(socket);
-
-  // Handle optional nickname setting
-  socket.on('setNickname', (name) => {
-    if (name.trim()) {
-      socket.nickname = name.trim();
-      console.log(`Nickname set for ${socket.id}: ${socket.nickname}`);
-    }
+  socket.on('setNickname', (nickname) => {
+    socket.nickname = nickname || `Player${socket.id.slice(0, 4)}`;
   });
 
-  // Create a room, using nickname or socket ID as display name
-  socket.on('createRoom', () => {
-    const displayName = socket.nickname || socket.id;
-    const roomId = Math.random().toString(36).substring(7);
-    const roomName = `${displayName}'s Room`;
-    rooms[roomId] = {
-      game: new Game(roomId, 60), // Default to 60s
-      players: [{ id: socket.id, displayName }],
-      name: roomName,
-      host: socket.id // The creator is the host
-    };
+  socket.on('createRoom', ({ duration }) => {
+    const roomId = `room${Math.floor(Math.random() * 10000)}`;
+    games[roomId] = new Game(roomId, duration);
     socket.join(roomId);
-    currentRoom = roomId;
-    rooms[roomId].game.addPlayer(socket.id, displayName);
-    console.log(`${displayName} created and joined room ${roomId} named "${roomName}"`);
+    socket.roomId = roomId;
     socket.emit('roomJoined', { roomId, isHost: true });
-    broadcastRoomList();
+    games[roomId].addPlayer(socket.id, socket.nickname || `Player${socket.id.slice(0, 4)}`);
   });
 
-  // Join a room, using nickname or socket ID
   socket.on('joinRoom', ({ roomId }) => {
-    if (rooms[roomId] && (rooms[roomId].players.length < 10 || roomId === lobbyRoomId)) {
-      const displayName = socket.nickname || socket.id;
+    if (games[roomId]) {
       socket.join(roomId);
-      currentRoom = roomId;
-      rooms[roomId].players.push({ id: socket.id, displayName });
-      rooms[roomId].game.addPlayer(socket.id, displayName);
-      io.to(roomId).emit('playerJoined', displayName);
-      console.log(`${displayName} joined room ${roomId}`);
-      socket.emit('roomJoined', { roomId, isHost: rooms[roomId].host === socket.id });
-      broadcastRoomList();
+      socket.roomId = roomId;
+      socket.emit('roomJoined', { roomId, isHost: false });
+      games[roomId].addPlayer(socket.id, socket.nickname || `Player${socket.id.slice(0, 4)}`);
     } else {
-      socket.emit('error', 'Room full or invalid');
+      socket.emit('error', 'Room not found');
     }
   });
 
-  // Handle player input
   socket.on('input', (input) => {
-    if (currentRoom && rooms[currentRoom]) {
-      rooms[currentRoom].game.handleInput(socket.id, input);
+    if (socket.roomId && games[socket.roomId]) {
+      games[socket.roomId].handleInput(socket.id, input);
     }
   });
 
-  // Reset game, only allowed by the host
   socket.on('resetGame', () => {
-    if (currentRoom && rooms[currentRoom] && rooms[currentRoom].host === socket.id) {
-      rooms[currentRoom].game.reset();
-      console.log(`Game reset in room ${currentRoom} by host ${socket.id}`);
+    if (socket.roomId && games[socket.roomId]) {
+      games[socket.roomId].reset();
     }
   });
 
-  // Handle disconnection
   socket.on('disconnect', () => {
-    if (currentRoom && rooms[currentRoom]) {
-      const displayName = socket.nickname || socket.id;
-      io.to(currentRoom).emit('playerLeft', displayName);
-      rooms[currentRoom].game.removePlayer(socket.id);
-      rooms[currentRoom].players = rooms[currentRoom].players.filter(p => p.id !== socket.id);
-      if (rooms[currentRoom].players.length === 0 && currentRoom !== lobbyRoomId) {
-        delete rooms[currentRoom];
-        console.log(`Room ${currentRoom} deleted due to all players disconnecting`);
+    if (socket.roomId && games[socket.roomId]) {
+      games[socket.roomId].removePlayer(socket.id);
+      if (Object.keys(games[socket.roomId].players).length === 0) {
+        delete games[socket.roomId];
       }
-      console.log(`${displayName} disconnected from room ${currentRoom}`);
-      broadcastRoomList();
     }
-  });
-
-  socket.on('getRooms', () => {
-    sendRoomList(socket);
+    console.log('Client disconnected:', socket.id);
   });
 });
 
-// Broadcast available rooms to all clients
-function broadcastRoomList() {
-  const availableRooms = Object.entries(rooms)
-    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
-    .map(([roomId, room]) => ({ id: roomId, name: room.name }));
-  console.log('Broadcasting room list:', availableRooms);
-  io.emit('roomList', availableRooms);
-}
-
-// Send room list to a specific socket
-function sendRoomList(socket) {
-  const availableRooms = Object.entries(rooms)
-    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
-    .map(([roomId, room]) => ({ id: roomId, name: room.name }));
-  console.log(`Sending room list to ${socket.id}:`, availableRooms);
-  socket.emit('roomList', availableRooms);
-}
-
-// Game loop for all rooms (60 FPS)
 setInterval(() => {
-  for (const roomId in rooms) {
-    const { game } = rooms[roomId];
-    game.update(1000 / 60);
+  for (const roomId in games) {
+    const game = games[roomId];
+    game.update(1000 / 60); // 60 FPS
     io.to(roomId).emit('gameState', game.getState());
   }
 }, 1000 / 60);

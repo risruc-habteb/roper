@@ -1,36 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Multiplayer Rope Game</title>
-    <style>
-        body {
-            margin: 0;
-            background: #f0f0f0;
-        }
-        #gameContainer {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-        }
-        canvas {
-            border: 1px solid black;
-        }
-        #roomBrowser {
-            margin: 20px;
-        }
-        #gameInfo {
-            margin: 10px;
-        }
-        .centered-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-    </style>
-</head>
 <body>
+    <!-- Unchanged HTML content -->
     <div id="roomBrowser">
         <div class="centered-content">
             <h3>Enter Your Nickname (Optional)</h3>
@@ -59,6 +28,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        // Unchanged JavaScript content from previous version
         const socket = io();
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -82,14 +52,16 @@
         const COIN_LIFETIME = 5;
         const CHAT_LINE_HEIGHT = 12;
         const MAX_CHAT_MESSAGES = 5;
-        const CHAT_LOG_X = VIRTUAL_WIDTH - 120; // Moved further right from 650 to 680
+        const CHAT_LOG_X = VIRTUAL_WIDTH - 120;
         const CHAT_LOG_MAX_LINES = 20;
         const CHAT_LOG_TOP = VIRTUAL_HEIGHT * 0.1;
         const CHAT_LOG_BOTTOM = VIRTUAL_HEIGHT * 0.9;
-        const CHAT_FONT_SIZE = 8; // Decreased from 10 to 8
-        const maxMessageWidth = 110; // Adjusted for ~20 characters at 8px font
+        const CHAT_FONT_SIZE = 8;
+        const maxMessageWidth = 110;
+        const BAZOOKA_CHARGE_TIME = 2;
+        const BLAST_RADIUS = 50;
+        const BLAST_DURATION = 0.3;
 
-        // UI Functions
         function showRoomBrowser() {
             document.getElementById('roomBrowser').style.display = 'block';
             document.getElementById('gameContainer').style.display = 'none';
@@ -105,17 +77,13 @@
             const input = document.getElementById('nickname').value.trim();
             const duration = document.getElementById('durationSelect').value;
             const durationValue = duration === 'Infinity' ? Infinity : parseInt(duration);
-            if (input) {
-                socket.emit('setNickname', input);
-            }
+            if (input) socket.emit('setNickname', input);
             socket.emit('createRoom', { duration: durationValue });
         }
 
         function joinRoomById(roomId) {
             const input = document.getElementById('nickname').value.trim();
-            if (input) {
-                socket.emit('setNickname', input);
-            }
+            if (input) socket.emit('setNickname', input);
             socket.emit('joinRoom', { roomId });
         }
 
@@ -142,6 +110,7 @@
 
         socket.on('connect', () => {
             myId = socket.id;
+            console.log('Connected to server:', myId);
         });
 
         socket.on('roomJoined', ({ roomId, isHost: hostStatus }) => {
@@ -166,7 +135,7 @@
         });
 
         socket.on('gameState', (state) => {
-            gameState = state;
+            gameState = state || {};
             updateCoinData();
             render();
         });
@@ -231,6 +200,40 @@
             setTimeout(() => socket.emit('input', { rope: false }), 100);
         });
 
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        let bazookaDown = false;
+        canvas.addEventListener('mousedown', (e) => {
+            if (!gameState || gameState.state !== 'playing' || isChatting || e.button !== 2) return;
+            const rect = canvas.getBoundingClientRect();
+            const bazookaX = (e.clientX - rect.left) / scaleFactor;
+            const bazookaY = (e.clientY - rect.top) / scaleFactor;
+            bazookaDown = true;
+            socket.emit('input', { bazooka: true, bazookaX, bazookaY });
+            console.log(`RMB Down: bazooka=true, x=${bazookaX}, y=${bazookaY}`);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!gameState || gameState.state !== 'playing' || !bazookaDown) return;
+            const rect = canvas.getBoundingClientRect();
+            const bazookaX = (e.clientX - rect.left) / scaleFactor;
+            const bazookaY = (e.clientY - rect.top) / scaleFactor;
+            socket.emit('input', { bazooka: true, bazookaX, bazookaY });
+            console.log(`RMB Move: bazooka=true, x=${bazookaX}, y=${bazookaY}`);
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!gameState || gameState.state !== 'playing' || e.button !== 2) return;
+            const rect = canvas.getBoundingClientRect();
+            const bazookaX = (e.clientX - rect.left) / scaleFactor;
+            const bazookaY = (e.clientY - rect.top) / scaleFactor;
+            bazookaDown = false;
+            socket.emit('input', { bazooka: false, bazookaX, bazookaY });
+            console.log(`RMB Up: bazooka=false, x=${bazookaX}, y=${bazookaY}`);
+        });
+
         function startChat() {
             if (!gameState.players.find(p => p.id === myId)) return;
             isChatting = true;
@@ -251,6 +254,7 @@
 
         function updateCoinData() {
             const now = Date.now();
+            if (!gameState.coins) return;
             gameState.coins.forEach((coin, index) => {
                 if (!coinData.has(index)) {
                     const angle = Math.random() * 2 * Math.PI;
@@ -383,30 +387,49 @@
             ctx.save();
             ctx.scale(scaleFactor, scaleFactor);
 
-            // Draw terrain
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 2 / scaleFactor;
-            for (let i = 0; i < gameState.terrain.x.length - 1; i++) {
+            if (gameState.terrain && gameState.terrain.x) {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2 / scaleFactor;
+                for (let i = 0; i < gameState.terrain.x.length - 1; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yFloor[i]);
+                    ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yFloor[i + 1]);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yCeiling[i]);
+                    ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yCeiling[i + 1]);
+                    ctx.stroke();
+                }
                 ctx.beginPath();
-                ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yFloor[i]);
-                ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yFloor[i + 1]);
+                ctx.moveTo(0, gameState.terrain.yCeiling[0]);
+                ctx.lineTo(0, gameState.terrain.yFloor[0]);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.moveTo(gameState.terrain.x[i], gameState.terrain.yCeiling[i]);
-                ctx.lineTo(gameState.terrain.x[i + 1], gameState.terrain.yCeiling[i + 1]);
+                ctx.moveTo(VIRTUAL_WIDTH, gameState.terrain.yCeiling[gameState.terrain.x.length - 1]);
+                ctx.lineTo(VIRTUAL_WIDTH, gameState.terrain.yFloor[gameState.terrain.x.length - 1]);
                 ctx.stroke();
             }
-            ctx.beginPath();
-            ctx.moveTo(0, gameState.terrain.yCeiling[0]);
-            ctx.lineTo(0, gameState.terrain.yFloor[0]);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(VIRTUAL_WIDTH, gameState.terrain.yCeiling[gameState.terrain.x.length - 1]);
-            ctx.lineTo(VIRTUAL_WIDTH, gameState.terrain.yFloor[gameState.terrain.x.length - 1]);
-            ctx.stroke();
 
-            // Draw coins
-            gameState.coins.forEach((coin, index) => renderCoin(coin, index));
+            if (gameState.coins) {
+                gameState.coins.forEach((coin, index) => renderCoin(coin, index));
+            }
+
+            if (gameState.projectiles) {
+                ctx.fillStyle = 'gray';
+                gameState.projectiles.forEach(proj => {
+                    ctx.fillRect(proj.x - 5, proj.y - 2, 10, 4);
+                });
+            }
+
+            if (gameState.blasts) {
+                gameState.blasts.forEach(blast => {
+                    const radius = BLAST_RADIUS * (blast.time / BLAST_DURATION);
+                    ctx.beginPath();
+                    ctx.arc(blast.x, blast.y, radius, 0, 2 * Math.PI);
+                    ctx.fillStyle = `rgba(255, 100, 0, ${1 - blast.time / BLAST_DURATION})`;
+                    ctx.fill();
+                });
+            }
 
             const now = Date.now();
             if (now - lastBlinkTime > 500) {
@@ -414,74 +437,99 @@
                 lastBlinkTime = now;
             }
 
-            // Draw players, ropes, and chat
-            gameState.players.forEach(player => {
-                if (player.rope.state !== 'none') {
-                    ctx.strokeStyle = '#888';
-                    ctx.lineWidth = 1 / scaleFactor;
-                    ctx.beginPath();
-                    ctx.moveTo(player.x, player.y);
-                    if (player.rope.state === 'attached') {
-                        ctx.lineTo(player.rope.tx, player.rope.ty);
-                    } else {
-                        ctx.lineTo(player.rope.x, player.rope.y);
-                    }
-                    ctx.stroke();
-                }
-
-                ctx.save();
-                ctx.translate(player.x, player.y);
-                ctx.rotate(player.rotation);
-                ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
-                ctx.strokeStyle = 'black';
-                ctx.beginPath();
-                ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.fillStyle = 'white';
-                ctx.beginPath();
-                ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.restore();
-
-                ctx.fillStyle = 'black';
-                ctx.font = '10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(player.displayName, player.x, player.y - 15);
-
-                ctx.font = '10px Arial';
-                ctx.textAlign = 'center';
-                const baseChatY = player.y - 25;
-
-                if (player.id === myId && isChatting) {
-                    const displayText = chatDraft + (cursorVisible ? '|' : '');
-                    ctx.fillStyle = 'grey';
-                    ctx.fillText(displayText, player.x, baseChatY);
-                }
-
-                if (player.chatMessages && player.chatMessages.length > 0) {
-                    const visibleMessages = player.chatMessages.slice(0, MAX_CHAT_MESSAGES);
-                    visibleMessages.forEach((msg, index) => {
-                        const age = (now - msg.timestamp) / 1000;
-                        let alpha = 1;
-                        if (age > 5) {
-                            alpha = Math.max(0, 1 - (age - 5) / 0.5);
+            if (gameState.players) {
+                gameState.players.forEach(player => {
+                    if (player.rope && player.rope.state !== 'none') {
+                        ctx.strokeStyle = '#888';
+                        ctx.lineWidth = 1 / scaleFactor;
+                        ctx.beginPath();
+                        ctx.moveTo(player.x, player.y);
+                        if (player.rope.state === 'attached') {
+                            ctx.lineTo(player.rope.tx, player.rope.ty);
+                        } else {
+                            ctx.lineTo(player.rope.x, player.rope.y);
                         }
-                        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
-                        const yOffset = baseChatY - (index + 1) * CHAT_LINE_HEIGHT;
-                        ctx.fillText(msg.text, player.x, yOffset);
-                    });
-                }
-            });
+                        ctx.stroke();
+                    }
 
-            // Draw chat log
+                    if (player.id === myId && player.input && player.input.bazooka && player.bazooka && player.bazooka.charge > 0) {
+                        const chargeRatio = Math.min(player.bazooka.charge / BAZOOKA_CHARGE_TIME, 1);
+                        const dx = player.input.bazookaX - player.x;
+                        const dy = player.input.bazookaY - player.y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        const dirX = dx / len;
+                        const dirY = dy / len;
+                        const maxDots = 5;
+                        for (let i = 0; i < maxDots; i++) {
+                            const t = (i + 1) / (maxDots + 1) * chargeRatio;
+                            const size = 2 + t * 4;
+                            const dist = PLAYER_RADIUS + 20 + t * 60;
+                            ctx.beginPath();
+                            ctx.arc(
+                                player.x + dirX * dist,
+                                player.y + dirY * dist,
+                                size,
+                                0,
+                                2 * Math.PI
+                            );
+                            ctx.fillStyle = 'red';
+                            ctx.fill();
+                        }
+                    }
+
+                    ctx.save();
+                    ctx.translate(player.x, player.y);
+                    ctx.rotate(player.rotation);
+                    ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
+                    ctx.strokeStyle = 'black';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.restore();
+
+                    ctx.fillStyle = 'black';
+                    ctx.font = '10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(player.displayName, player.x, player.y - 15);
+
+                    ctx.font = '10px Arial';
+                    ctx.textAlign = 'center';
+                    const baseChatY = player.y - 25;
+
+                    if (player.id === myId && isChatting) {
+                        const displayText = chatDraft + (cursorVisible ? '|' : '');
+                        ctx.fillStyle = 'grey';
+                        ctx.fillText(displayText, player.x, baseChatY);
+                    }
+
+                    if (player.chatMessages && player.chatMessages.length > 0) {
+                        const visibleMessages = player.chatMessages.slice(0, MAX_CHAT_MESSAGES);
+                        visibleMessages.forEach((msg, index) => {
+                            const age = (now - msg.timestamp) / 1000;
+                            let alpha = 1;
+                            if (age > 5) {
+                                alpha = Math.max(0, 1 - (age - 5) / 0.5);
+                            }
+                            ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+                            const yOffset = baseChatY - (index + 1) * CHAT_LINE_HEIGHT;
+                            ctx.fillText(msg.text, player.x, yOffset);
+                        });
+                    }
+                });
+            }
+
             if (gameState.chatHistory && gameState.chatHistory.length > 0) {
                 ctx.font = `${CHAT_FONT_SIZE}px Arial`;
                 const availableHeight = CHAT_LOG_BOTTOM - CHAT_LOG_TOP;
                 let totalHeight = 0;
                 const messagesToRender = [];
                 for (let i = 0; i < gameState.chatHistory.length; i++) {
-                    const message = gameState.chatHistory[i]; // from newest to oldest
+                    const message = gameState.chatHistory[i];
                     const lines = wrapText(message.text, maxMessageWidth);
                     const messageHeight = lines.length * CHAT_LINE_HEIGHT;
                     if (totalHeight + messageHeight > availableHeight) break;
@@ -491,7 +539,7 @@
                 let y = CHAT_LOG_BOTTOM - totalHeight;
                 const usernameX = CHAT_LOG_X - 5;
                 const messageX = CHAT_LOG_X;
-                for (const {message, lines} of [...messagesToRender].reverse()) { // from oldest to newest
+                for (const {message, lines} of [...messagesToRender].reverse()) {
                     ctx.textAlign = 'right';
                     ctx.fillStyle = 'black';
                     ctx.fillText(message.sender + ':', usernameX, y);
@@ -509,18 +557,22 @@
                 ctx.textAlign = 'left';
                 const timeText = gameState.timer === Infinity ? 'Time: ∞' : `Time: ${Math.ceil(gameState.timer / 1000)}s`;
                 ctx.fillText(timeText, 10, 30);
-                gameState.players.forEach((player, index) => {
-                    ctx.fillText(`${player.displayName}: ${player.score}`, 10, 60 + index * 30);
-                });
+                if (gameState.players) {
+                    gameState.players.forEach((player, index) => {
+                        ctx.fillText(`${player.displayName}: ${player.score}`, 10, 60 + index * 30);
+                    });
+                }
             } else if (gameState.state === 'gameOver') {
                 ctx.font = `${40 * scaleFactor}px Consolas`;
                 ctx.fillStyle = 'red';
                 ctx.textAlign = 'center';
                 ctx.fillText('Game Over', VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 - 50);
                 ctx.font = `${20 * scaleFactor}px Consolas`;
-                gameState.players.forEach((player, index) => {
-                    ctx.fillText(`${player.displayName}: ${player.score}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + index * 30);
-                });
+                if (gameState.players) {
+                    gameState.players.forEach((player, index) => {
+                        ctx.fillText(`${player.displayName}: ${player.score}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + index * 30);
+                    });
+                }
             }
 
             ctx.restore();
@@ -529,4 +581,3 @@
         showRoomBrowser();
     </script>
 </body>
-</html>

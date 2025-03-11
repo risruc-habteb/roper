@@ -1,16 +1,26 @@
 {
   "name": "roper",
   "version": "1.0.0",
-  "description": "",
+  "description": "swing around on ninja ropes with friends.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "express": "^4.21.2",
-    "socket.io": "^4.8.1"
-  }
+    "socket.io": "^4.8.1",
+    "ws": "^8.18.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/risruc-habteb/roper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/risruc-habteb/roper/issues"
+  },
+  "homepage": "https://github.com/risruc-habteb/roper#readme"
 }
