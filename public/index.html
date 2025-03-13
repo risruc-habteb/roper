@@ -62,6 +62,7 @@
         const socket = io();
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        document.addEventListener('contextmenu', (event) => event.preventDefault());
         let myId = null;
         let nickname = '';
         let isHost = false;
@@ -72,6 +73,10 @@
         let cursorVisible = true;
         let lastBlinkTime = Date.now();
         let coinData = new Map();
+        let isAiming = false;
+        let aimStartTime = 0;
+        let cursorX = 0;
+        let cursorY = 0;
 
         const VIRTUAL_WIDTH = 800;
         const VIRTUAL_HEIGHT = 400;
@@ -82,12 +87,53 @@
         const COIN_LIFETIME = 5;
         const CHAT_LINE_HEIGHT = 12;
         const MAX_CHAT_MESSAGES = 5;
-        const CHAT_LOG_X = VIRTUAL_WIDTH - 120; // Moved further right from 650 to 680
+        const CHAT_LOG_X = VIRTUAL_WIDTH - 120;
         const CHAT_LOG_MAX_LINES = 20;
         const CHAT_LOG_TOP = VIRTUAL_HEIGHT * 0.1;
         const CHAT_LOG_BOTTOM = VIRTUAL_HEIGHT * 0.9;
-        const CHAT_FONT_SIZE = 8; // Decreased from 10 to 8
-        const maxMessageWidth = 110; // Adjusted for ~20 characters at 8px font
+        const CHAT_FONT_SIZE = 8;
+        const maxMessageWidth = 110;
+        const BAZOOKA_MAX_VELOCITY = 750;
+        const PROJECTILE_WIDTH = 20;
+        const PROJECTILE_HEIGHT = 10;
+        const MAX_PROJECTILES = 50;
+        const BLAST_RADIUS = 75;
+        const BLAST_DURATION = 0.25;
+        const MAX_BLAST_FORCE = 750;
+
+        document.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            cursorX = (event.clientX - rect.left) / scaleFactor;
+            cursorY = (event.clientY - rect.top) / scaleFactor;
+        });
+
+        document.addEventListener('mousedown', (event) => {
+            if (event.button === 2 && gameState && gameState.state === 'playing' && !isChatting) {
+                isAiming = true;
+                aimStartTime = Date.now();
+            }
+        });
+
+        document.addEventListener('mouseup', (event) => {
+            if (event.button === 2 && isAiming) {
+                isAiming = false;
+                const aimTime = Math.min((Date.now() - aimStartTime) / 1000, 0.75); // Cap at 0.75s
+                const me = gameState.players.find(p => p.id === myId);
+                if (me) {
+                    const dx = cursorX - me.x;
+                    const dy = cursorY - me.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const direction = { x: dx / dist, y: dy / dist };
+                    const power = aimTime / 0.75; // Normalize to 0-1
+                    socket.emit('input', {
+                        type: 'bazooka_fire',
+                        directionX: direction.x,
+                        directionY: direction.y,
+                        power
+                    });
+                }
+            }
+        });
 
         // UI Functions
         function showRoomBrowser() {
@@ -249,6 +295,35 @@
             chatDraft = '';
         }
 
+        function renderAimingTool(player) {
+            if (!isAiming || player.id !== myId) return;
+
+            const timeHeld = (Date.now() - aimStartTime) / 1000; // In seconds
+            const power = Math.min(timeHeld / 0.75, 1); // 0 to 1 over 0.75s
+            const baseSpacing = 10;
+            const baseSize = 2;
+            const maxScale = 3;
+
+            const dx = cursorX - player.x;
+            const dy = cursorY - player.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const directionX = dx / dist;
+            const directionY = dy / dist;
+
+            const spacing = baseSpacing + power * (baseSpacing * maxScale);
+            const size = baseSize + power * (baseSize * maxScale);
+
+            ctx.fillStyle = 'red';
+            for (let i = 0; i < 3; i++) {
+                const offset = (i + 1) * spacing;
+                const x = player.x + directionX * offset;
+                const y = player.y + directionY * offset;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
         function updateCoinData() {
             const now = Date.now();
             gameState.coins.forEach((coin, index) => {
@@ -377,6 +452,65 @@
             return lines;
         }
 
+        function renderProjectile(proj) {
+    ctx.save();
+    ctx.translate(proj.x, proj.y);
+    ctx.rotate(proj.rotation);
+
+    // Spinning parameters
+    const SPIN_SPEED = 2 * Math.PI; // Radians per second
+    const STRIPE_WIDTH = 5; // Width of each stripe
+    const spinAngle = (Date.now() / 1000 * SPIN_SPEED) % (2 * Math.PI);
+    const offset = (spinAngle / (2 * Math.PI)) * (2 * STRIPE_WIDTH);
+
+    // Draw barrel (rectangle)
+    for (let y = -PROJECTILE_HEIGHT / 2; y < PROJECTILE_HEIGHT / 2; y++) {
+        // Calculate stripe pattern, ensuring it cycles correctly for all y
+        const patternY = ((y - offset) % (2 * STRIPE_WIDTH) + 2 * STRIPE_WIDTH) % (2 * STRIPE_WIDTH);
+        const color = (patternY < STRIPE_WIDTH) ? 'black' : 'white';
+        ctx.fillStyle = color;
+        ctx.fillRect(-PROJECTILE_WIDTH / 2, y, PROJECTILE_WIDTH, 1);
+    }
+
+    // Draw cap (semicircle)
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(PROJECTILE_WIDTH / 2, 0, PROJECTILE_HEIGHT / 2, -Math.PI / 2, Math.PI / 2);
+    ctx.clip();
+    for (let y = -PROJECTILE_HEIGHT / 2; y < PROJECTILE_HEIGHT / 2; y++) {
+        // Use the same pattern as the barrel for continuity
+        const patternY = ((y - offset) % (2 * STRIPE_WIDTH) + 2 * STRIPE_WIDTH) % (2 * STRIPE_WIDTH);
+        // Invert the color condition for the cap
+        const color = (patternY < STRIPE_WIDTH) ? 'white' : 'black';
+        ctx.fillStyle = color;
+        // Align stripes with barrel’s right edge
+        ctx.fillRect(PROJECTILE_WIDTH / 2 - PROJECTILE_HEIGHT / 2, y, PROJECTILE_HEIGHT, 1);
+    }
+    ctx.restore();
+
+    // Draw outlines
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(-PROJECTILE_WIDTH / 2, -PROJECTILE_HEIGHT / 2, PROJECTILE_WIDTH, PROJECTILE_HEIGHT);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(PROJECTILE_WIDTH / 2, 0, PROJECTILE_HEIGHT / 2, -Math.PI / 2, Math.PI / 2);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+        function renderImpact(impact) {
+            const progress = impact.time / BLAST_DURATION;
+            const radius = BLAST_RADIUS * progress;
+
+            ctx.beginPath();
+            ctx.arc(impact.x, impact.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 100, 0, ${1 - progress})`;
+            ctx.fill();
+        }
+
         function render() {
             if (!gameState) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -408,6 +542,16 @@
             // Draw coins
             gameState.coins.forEach((coin, index) => renderCoin(coin, index));
 
+            // Draw projectiles
+            if (gameState.projectiles) {
+                gameState.projectiles.forEach(proj => renderProjectile(proj));
+            }
+
+            // Draw impacts
+            if (gameState.impacts) {
+                gameState.impacts.forEach(impact => renderImpact(impact));
+            }
+
             const now = Date.now();
             if (now - lastBlinkTime > 500) {
                 cursorVisible = !cursorVisible;
@@ -416,6 +560,7 @@
 
             // Draw players, ropes, and chat
             gameState.players.forEach(player => {
+                renderAimingTool(player);
                 if (player.rope.state !== 'none') {
                     ctx.strokeStyle = '#888';
                     ctx.lineWidth = 1 / scaleFactor;
@@ -481,7 +626,7 @@
                 let totalHeight = 0;
                 const messagesToRender = [];
                 for (let i = 0; i < gameState.chatHistory.length; i++) {
-                    const message = gameState.chatHistory[i]; // from newest to oldest
+                    const message = gameState.chatHistory[i];
                     const lines = wrapText(message.text, maxMessageWidth);
                     const messageHeight = lines.length * CHAT_LINE_HEIGHT;
                     if (totalHeight + messageHeight > availableHeight) break;
@@ -491,7 +636,7 @@
                 let y = CHAT_LOG_BOTTOM - totalHeight;
                 const usernameX = CHAT_LOG_X - 5;
                 const messageX = CHAT_LOG_X;
-                for (const {message, lines} of [...messagesToRender].reverse()) { // from oldest to newest
+                for (const {message, lines} of [...messagesToRender].reverse()) {
                     ctx.textAlign = 'right';
                     ctx.fillStyle = 'black';
                     ctx.fillText(message.sender + ':', usernameX, y);

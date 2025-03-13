@@ -2,27 +2,34 @@
 
 // Constants
 const PLAYER_SPEED = 100;
-const AIR_ACCELERATION = 500;
+const AIR_ACCELERATION = 300;
 const AIR_FRICTION = 50;
 const GROUND_ACCELERATION = 1000;
 const GROUND_FRICTION = 100;
 const MAX_SPEED_ALONG_SLOPE = 150;
-const ROPE_SPEED = 1200;
-const ROPE_MAX_LENGTH = 450;
+const ROPE_SPEED = 1350;
+const ROPE_MAX_LENGTH = 300;
 const WIDTH = 800;
 const HEIGHT = 400;
 const N_TERRAIN_SEGMENTS = 25;
 const PLAYER_RADIUS = 10;
 const COIN_RADIUS = 14;
 const GRAVITY = 400;
-const SWING_ACCELERATION = 600;
+const SWING_ACCELERATION = 500;
 const ROPE_LENGTH_CHANGE_SPEED = 300;
 const MIN_ROPE_LENGTH = 0;
-const MAX_ROPE_LENGTH = 500;
-const JUMP_VELOCITY = -300;
+const MAX_ROPE_LENGTH = 350;
+const JUMP_VELOCITY = -275;
 const COIN_LIFETIME = 5;
 const COIN_SPAWN_INTERVAL = 2;
 const COLLISION_ENERGY_LOSS = 0.5;
+const BAZOOKA_MAX_VELOCITY = 750;
+const PROJECTILE_WIDTH = 20;
+const PROJECTILE_HEIGHT = 10;
+const MAX_PROJECTILES = 50;
+const BLAST_RADIUS = 75;
+const BLAST_DURATION = 0.25;
+const MAX_BLAST_FORCE = 750;
 
 // Simple noise function for terrain generation
 function generateNoise(n, k) {
@@ -63,10 +70,10 @@ class Game {
     this.roomId = roomId;
     this.players = {};
     this.coins = [];
-    this.chatHistory = []; // Added for global chat log
+    this.chatHistory = [];
     this.state = 'playing';
-    this.timer = duration === Infinity ? Infinity : duration * 1000; // Convert seconds to milliseconds, or Infinity
-    this.duration = duration; // Store original duration in seconds
+    this.timer = duration === Infinity ? Infinity : duration * 1000;
+    this.duration = duration;
     this.x = [];
     this.yFloor = [];
     this.yCeiling = [];
@@ -74,6 +81,8 @@ class Game {
     this.coinSpawnTimer = COIN_SPAWN_INTERVAL * 1000;
     this.generateTerrain();
     this.spawnCoin();
+    this.projectiles = [];
+    this.impacts = [];
   }
 
   generateTerrain() {
@@ -141,7 +150,8 @@ class Game {
       nextMessageId: 0,
       onGround: false,
       lastRopeInput: false,
-      lastJumpInput: false
+      lastJumpInput: false,
+      canDoubleJump: false
     };
   }
 
@@ -153,16 +163,30 @@ class Game {
     if (this.players[id]) {
       const player = this.players[id];
       player.input = { ...player.input, ...input };
+      if (input.type === 'bazooka_fire') {
+        if (this.projectiles.length < MAX_PROJECTILES) {
+          const velocity = BAZOOKA_MAX_VELOCITY * input.power;
+          const projectile = {
+            x: player.x,
+            y: player.y,
+            vx: input.directionX * velocity,
+            vy: input.directionY * velocity,
+            rotation: 0,
+            ownerId: id
+          };
+          this.projectiles.push(projectile);
+        }
+      }
       if (input.chat) {
         const message = {
           id: player.nextMessageId++,
           text: input.chat,
           timestamp: Date.now(),
-          sender: player.displayName // Include sender name for chat log
+          sender: player.displayName
         };
         player.chatMessages.unshift(message);
-        this.chatHistory.unshift(message); // Add to global chat history
-        if (this.chatHistory.length > 50) this.chatHistory.pop(); // Limit history to 50 messages
+        this.chatHistory.unshift(message);
+        if (this.chatHistory.length > 50) this.chatHistory.pop();
       }
     }
   }
@@ -185,6 +209,49 @@ class Game {
     }
 
     const dtSeconds = dt / 1000;
+
+    // Update projectiles
+    this.projectiles = this.projectiles.filter((proj) => {
+      proj.x += proj.vx * dtSeconds;
+      proj.y += proj.vy * dtSeconds;
+      proj.vy += GRAVITY * dtSeconds;
+      proj.rotation = Math.atan2(proj.vy, proj.vx);
+
+      // Boundary check
+      if (proj.x < 0 || proj.x > WIDTH || proj.y > HEIGHT) {
+        this.handleImpact(proj);
+        return false;
+      }
+
+      // Terrain collision
+      const floorY = this.getFloorYAt(proj.x);
+      const ceilingY = this.getCeilingYAt(proj.x);
+      if (proj.y >= floorY || proj.y <= ceilingY) {
+        this.handleImpact(proj);
+        return false;
+      }
+
+      // Player collision
+      for (const id in this.players) {
+        if (id === proj.ownerId) continue;
+        const player = this.players[id];
+        const dx = player.x - proj.x;
+        const dy = player.y - proj.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < PLAYER_RADIUS + PROJECTILE_WIDTH / 2) {
+          this.handleImpact(proj);
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // Update impacts
+    this.impacts = this.impacts.filter((impact) => {
+      impact.time += dtSeconds;
+      return impact.time <= impact.maxTime;
+    });
 
     // Update coins' lifetime
     this.coins.forEach(coin => {
@@ -322,6 +389,10 @@ class Game {
 
           player.rotation += (player.vx * dtSeconds) / PLAYER_RADIUS;
         } else {
+          if (input.jump && !player.lastJumpInput && player.canDoubleJump) {
+            player.vy = JUMP_VELOCITY;
+            player.canDoubleJump = false;
+          }
           if (input.left) player.vx -= AIR_ACCELERATION * dtSeconds;
           else if (input.right) player.vx += AIR_ACCELERATION * dtSeconds;
           const friction = AIR_FRICTION * dtSeconds;
@@ -352,6 +423,7 @@ class Game {
         } else {
           player.vy = 0;
           player.onGround = true;
+          player.canDoubleJump = true;
         }
       } else {
         player.onGround = false;
@@ -385,11 +457,39 @@ class Game {
     });
   }
 
+  handleImpact(proj) {
+    const impact = {
+      x: proj.x,
+      y: proj.y,
+      time: 0,
+      maxTime: BLAST_DURATION
+    };
+    this.impacts.push(impact);
+
+    for (const id in this.players) {
+      if (id === proj.ownerId) continue;
+      const player = this.players[id];
+      const dx = player.x - proj.x;
+      const dy = player.y - proj.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < BLAST_RADIUS) {
+        const force = MAX_BLAST_FORCE * (1 - dist / BLAST_RADIUS);
+        const dirX = dx / dist || 0;
+        const dirY = dy / dist || 0;
+        player.vx += dirX * force;
+        player.vy += dirY * force;
+        player.onGround = false;
+      }
+    }
+  }
+
   reset() {
     this.generateTerrain();
     this.state = 'playing';
     this.timer = this.duration === Infinity ? Infinity : this.duration * 1000;
     this.coins = [];
+    this.projectiles = [];
+    this.impacts = [];
     this.coinSpawnTimer = COIN_SPAWN_INTERVAL * 1000;
     for (const id in this.players) {
       const player = this.players[id];
@@ -405,6 +505,7 @@ class Game {
       player.onGround = false;
       player.lastRopeInput = false;
       player.lastJumpInput = false;
+      player.canDoubleJump = false;
     }
     this.spawnCoin();
   }
@@ -414,11 +515,13 @@ class Game {
       roomId: this.roomId,
       players: Object.values(this.players),
       coins: this.coins,
-      chatHistory: this.chatHistory, // Include chat history in state
+      chatHistory: this.chatHistory,
       state: this.state,
       timer: this.timer,
-      duration: this.duration, // Include original duration
-      terrain: { x: this.x, yFloor: this.yFloor, yCeiling: this.yCeiling }
+      duration: this.duration,
+      terrain: { x: this.x, yFloor: this.yFloor, yCeiling: this.yCeiling },
+      projectiles: this.projectiles,
+      impacts: this.impacts
     };
   }
 }
