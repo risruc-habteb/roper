@@ -17,13 +17,18 @@ app.get('/', (req, res) => {
 
 const rooms = {};
 
-// Create the persistent lobby room
+// Create the persistent lobby room with default settings
 const lobbyRoomId = 'lobby';
 rooms[lobbyRoomId] = {
-  game: new Game(lobbyRoomId, Infinity), // No time limit
+  game: new Game(lobbyRoomId, { gameMode: 'deathmatch', friendlyFire: true, timeLimit: Infinity }),
   players: [],
   name: 'Lobby',
-  host: null // No specific host, as it’s persistent
+  host: null,
+  gameMode: 'deathmatch',
+  friendlyFire: true,
+  timeLimit: Infinity,
+  scoreLimit: Infinity,
+  maxPlayers: 50
 };
 
 io.on('connection', (socket) => {
@@ -40,31 +45,45 @@ io.on('connection', (socket) => {
     if (name.trim()) {
       socket.nickname = name.trim();
       console.log(`Nickname set for ${socket.id}: ${socket.nickname}`);
+      // Update display name in the room if already in one
+      if (currentRoom && rooms[currentRoom]) {
+        const player = rooms[currentRoom].players.find(p => p.id === socket.id);
+        if (player) {
+          player.displayName = socket.nickname;
+          rooms[currentRoom].game.players[socket.id].displayName = socket.nickname;
+          io.to(currentRoom).emit('playerUpdated', { id: socket.id, displayName: socket.nickname });
+        }
+      }
     }
   });
 
-  // Create a room, using nickname or socket ID as display name
-  socket.on('createRoom', () => {
+  // Create a room with detailed options
+  socket.on('createRoom', (options) => {
     const displayName = socket.nickname || socket.id;
     const roomId = Math.random().toString(36).substring(7);
     const roomName = `${displayName}'s Room`;
     rooms[roomId] = {
-      game: new Game(roomId, 60), // Default to 60s
+      game: new Game(roomId, options),
       players: [{ id: socket.id, displayName }],
       name: roomName,
-      host: socket.id // The creator is the host
+      host: socket.id,
+      gameMode: options.gameMode,
+      friendlyFire: options.friendlyFire || false,
+      timeLimit: options.timeLimit,
+      scoreLimit: options.gameMode === 'deathmatch' ? options.killLimit : options.goldWinLimit,
+      maxPlayers: 10 // Default max players
     };
     socket.join(roomId);
     currentRoom = roomId;
     rooms[roomId].game.addPlayer(socket.id, displayName);
-    console.log(`${displayName} created and joined room ${roomId} named "${roomName}"`);
+    console.log(`${displayName} created and joined room ${roomId} named "${roomName}" with options:`, options);
     socket.emit('roomJoined', { roomId, isHost: true });
     broadcastRoomList();
   });
 
-  // Join a room, using nickname or socket ID
+  // Join a room, respecting max players
   socket.on('joinRoom', ({ roomId }) => {
-    if (rooms[roomId] && (rooms[roomId].players.length < 10 || roomId === lobbyRoomId)) {
+    if (rooms[roomId] && (rooms[roomId].players.length < rooms[roomId].maxPlayers || roomId === lobbyRoomId)) {
       const displayName = socket.nickname || socket.id;
       socket.join(roomId);
       currentRoom = roomId;
@@ -115,20 +134,34 @@ io.on('connection', (socket) => {
   });
 });
 
-// Broadcast available rooms to all clients
+// Broadcast detailed room list to all clients
 function broadcastRoomList() {
-  const availableRooms = Object.entries(rooms)
-    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
-    .map(([roomId, room]) => ({ id: roomId, name: room.name }));
+  const availableRooms = Object.entries(rooms).map(([roomId, room]) => ({
+    id: roomId,
+    name: room.name,
+    gameMode: room.gameMode,
+    friendlyFire: room.friendlyFire,
+    timeLimit: room.timeLimit,
+    scoreLimit: room.scoreLimit,
+    playerCount: room.players.length,
+    maxPlayers: room.maxPlayers
+  }));
   console.log('Broadcasting room list:', availableRooms);
   io.emit('roomList', availableRooms);
 }
 
-// Send room list to a specific socket
+// Send detailed room list to a specific socket
 function sendRoomList(socket) {
-  const availableRooms = Object.entries(rooms)
-    .filter(([roomId, room]) => room.players.length < 10 || roomId === lobbyRoomId)
-    .map(([roomId, room]) => ({ id: roomId, name: room.name }));
+  const availableRooms = Object.entries(rooms).map(([roomId, room]) => ({
+    id: roomId,
+    name: room.name,
+    gameMode: room.gameMode,
+    friendlyFire: room.friendlyFire,
+    timeLimit: room.timeLimit,
+    scoreLimit: room.scoreLimit,
+    playerCount: room.players.length,
+    maxPlayers: room.maxPlayers
+  }));
   console.log(`Sending room list to ${socket.id}:`, availableRooms);
   socket.emit('roomList', availableRooms);
 }
