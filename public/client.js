@@ -17,8 +17,8 @@ let aimStartTime = 0;
 let cursorX = 0;
 let cursorY = 0;
 
-const VIRTUAL_WIDTH = 800;
-const VIRTUAL_HEIGHT = 400;
+const VIRTUAL_WIDTH = 1600;
+const VIRTUAL_HEIGHT = 800;
 const PLAYER_RADIUS = 10;
 const COIN_RADIUS = 14;
 const SPIN_SPEED = 4 * Math.PI;
