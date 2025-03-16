@@ -190,7 +190,10 @@ socket.on('error', (msg) => {
 // Keyboard and Canvas Event Listeners
 document.addEventListener('keydown', (e) => {
     if (!gameState || gameState.state !== 'playing') return;
-
+    if (e.key === 't' && !isChatting && gameState.gameMode === 'teamDeathmatch') {
+        socket.emit('input', { type: 'switchTeam' });
+        e.preventDefault();
+      }
     if (e.key === 'Enter' && !isChatting) {
         startChat();
         e.preventDefault();
@@ -568,17 +571,26 @@ function render() {
             ctx.scale(scale, scale);
         }
         ctx.rotate(player.rotation);
-        ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
-        ctx.strokeStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.setLineDash([]);
+
+    // Set fill color based on team
+    if (gameState.gameMode === 'teamDeathmatch') {
+        ctx.fillStyle = player.team === 'red' ? 'red' : 'blue';
+      } else {
         ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.restore();
+      }
+  
+      // Draw filled circle
+      ctx.beginPath();
+      ctx.arc(0, 0, PLAYER_RADIUS, 0, 2 * Math.PI);
+      ctx.fill();
+  
+      // Optional: Keep outline for clarity
+      ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
+      ctx.strokeStyle = 'black'; // Changed to black for visibility
+      ctx.stroke();
+      ctx.setLineDash([]);
+  
+      ctx.restore();
 
         // Draw name and health indicator
         ctx.fillStyle = 'black';
@@ -647,24 +659,53 @@ function render() {
         ctx.textAlign = 'left';
         const timeText = gameState.timer === Infinity ? 'Time: ∞' : `Time: ${Math.ceil(gameState.timer / 1000)}s`;
         ctx.fillText(timeText, 10, 30);
-        const scoreLabel = gameState.gameMode === 'deathmatch' ? 'Kills' : 'Coins';
-        gameState.players.forEach((player, index) => {
+    
+        if (gameState.gameMode === 'teamDeathmatch') {
+            ctx.fillText(`Red Team: ${gameState.redTeamScore}`, 10, 60);
+            ctx.fillText(`Blue Team: ${gameState.blueTeamScore}`, 10, 90);
+        } else {
+          const scoreLabel = gameState.gameMode === 'deathmatch' ? 'Kills' : 'Coins';
+          gameState.players.forEach((player, index) => {
             ctx.fillText(`${player.displayName}: ${player.score} ${scoreLabel}`, 10, 60 + index * 30);
-        });
-    } else if (gameState.state === 'gameOver') {
+          });
+        }
+      } else if (gameState.state === 'gameOver') {
         ctx.font = `${40 * scaleFactor}px Consolas`;
         ctx.fillStyle = 'red';
         ctx.textAlign = 'center';
-        ctx.fillText('Game Over', VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 - 50);
+        if (gameState.gameMode === 'teamDeathmatch' && gameState.winner) {
+          ctx.fillText(
+            gameState.winner === 'red' ? 'Red Team Wins!' : 
+            gameState.winner === 'blue' ? 'Blue Team Wins!' : 'It\'s a Tie!',
+            VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 - 50
+          );
+          ctx.font = `${20 * scaleFactor}px Consolas`;
+          ctx.fillText(`Red Team: ${gameState.redTeamScore}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + 30);
+          ctx.fillText(`Blue Team: ${gameState.blueTeamScore}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + 60);
+        } else {
+          ctx.fillText('Game Over', VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 - 50);
+        }
+    
         ctx.font = `${20 * scaleFactor}px Consolas`;
-        const scoreLabel = gameState.gameMode === 'deathmatch' ? 'Kills' : 'Coins';
-        gameState.players.forEach((player, index) => {
-            ctx.fillText(`${player.displayName}: ${player.score} ${scoreLabel}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + index * 30);
-        });
+        if (gameState.gameMode === 'teamDeathmatch') {
+          let redScore = 0, blueScore = 0;
+          gameState.players.forEach(p => {
+            if (p.team === 'red') redScore += p.score;
+            else if (p.team === 'blue') blueScore += p.score;
+          });
+          ctx.fillText(`Red Team: ${redScore}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + 30);
+          ctx.fillText(`Blue Team: ${blueScore}`, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + 60);
+        } else {
+          const scoreLabel = gameState.gameMode === 'deathmatch' ? 'Kills' : 'Coins';
+          gameState.players.forEach((player, index) => {
+            ctx.fillText(`${player.displayName}: ${player.score} ${scoreLabel}`, 
+              VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2 + 30 + index * 30);
+          });
+        }
+      }
+    
+      ctx.restore();
     }
-
-    ctx.restore();
-}
 
 // Initialize the Room Browser
 showRoomBrowser();

@@ -134,6 +134,7 @@
                 <div class="option-group" data-name="gameMode">
                     <button class="option" data-value="goldrush">Goldrush</button>
                     <button class="option selected" data-value="deathmatch">Deathmatch</button>
+                    <button class="option" data-value="teamDeathmatch">Team Deathmatch</button>
                 </div>
                 <h3>Friendly Fire</h3>
                 <div class="option-group" data-name="friendlyFire">
@@ -208,31 +209,40 @@
         }
 
         document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('option')) {
-                const group = e.target.parentElement;
-                const groupName = group.getAttribute('data-name');
-                group.querySelectorAll('.option').forEach(opt => opt.classList.remove('selected'));
-                e.target.classList.add('selected');
-                if (groupName === 'gameMode') {
-                    const gameMode = e.target.getAttribute('data-value');
-                    document.getElementById('scoreLimitLabel').textContent = gameMode === 'deathmatch' ? 'Kill Limit' : 'Gold Win Limit';
-                }
-            }
-        });
+  if (e.target.classList.contains('option')) {
+    const group = e.target.parentElement;
+    const groupName = group.getAttribute('data-name');
+    group.querySelectorAll('.option').forEach(opt => opt.classList.remove('selected'));
+    e.target.classList.add('selected');
+    if (groupName === 'gameMode') {
+      const gameMode = e.target.getAttribute('data-value');
+      const label = document.getElementById('scoreLimitLabel');
+      if (gameMode === 'deathmatch') {
+        label.textContent = 'Kill Limit';
+      } else if (gameMode === 'goldrush') {
+        label.textContent = 'Gold Win Limit';
+      } else if (gameMode === 'teamDeathmatch') {
+        label.textContent = 'Team Kill Limit';
+      }
+    }
+  }
+});
 
-        function createRoom() {
-            const gameMode = getSelectedValue('gameMode');
-            const friendlyFire = getSelectedValue('friendlyFire') === 'on';
-            const timeLimit = getSelectedValue('timeLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('timeLimit'));
-            const scoreLimit = getSelectedValue('scoreLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('scoreLimit'));
-            let options = { gameMode, friendlyFire, timeLimit };
-            if (gameMode === 'deathmatch') {
-                options.killLimit = scoreLimit;
-            } else {
-                options.goldWinLimit = scoreLimit;
-            }
-            socket.emit('createRoom', options);
-        }
+function createRoom() {
+  const gameMode = getSelectedValue('gameMode');
+  const friendlyFire = getSelectedValue('friendlyFire') === 'on';
+  const timeLimit = getSelectedValue('timeLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('timeLimit'));
+  const scoreLimit = getSelectedValue('scoreLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('scoreLimit'));
+  let options = { gameMode, friendlyFire, timeLimit };
+  if (gameMode === 'deathmatch') {
+    options.killLimit = scoreLimit;
+  } else if (gameMode === 'goldrush') {
+    options.goldWinLimit = scoreLimit;
+  } else if (gameMode === 'teamDeathmatch') {
+    options.teamKillLimit = scoreLimit;
+  }
+  socket.emit('createRoom', options);
+}
     </script>
 </body>
 </html>

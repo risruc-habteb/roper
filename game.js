@@ -86,8 +86,13 @@ function lineLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
 class Game {
   constructor(roomId, options) {
     this.roomId = roomId;
-    this.gameMode = options.gameMode || 'goldrush'; // Default to Goldrush
-    this.friendlyFire = this.gameMode === 'deathmatch' ? (options.friendlyFire || false) : false;
+    this.gameMode = options.gameMode || 'goldrush';
+    this.redTeamScore = this.gameMode === 'teamDeathmatch' ? 0 : undefined;
+    this.blueTeamScore = this.gameMode === 'teamDeathmatch' ? 0 : undefined;
+    // Enable friendlyFire for both Deathmatch and Team Deathmatch
+    this.friendlyFire = (this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') 
+      ? (options.friendlyFire || false) 
+      : false;
     this.killLimit = this.gameMode === 'deathmatch' ? (options.killLimit || Infinity) : Infinity;
     this.goldWinLimit = this.gameMode === 'goldrush' ? (options.goldWinLimit || Infinity) : Infinity;
     this.timeLimit = options.timeLimit || Infinity;
@@ -97,6 +102,7 @@ class Game {
     this.chatHistory = [];
     this.state = 'playing';
     this.x = [];
+    this.winner = null;
     this.yFloor = [];
     this.yCeiling = [];
     this.terrainLines = [];
@@ -243,6 +249,7 @@ class Game {
     this.players[id] = {
       id,
       displayName,
+      team: null, // Default to null for non-team modes
       x: WIDTH / 4,
       y: this.getFloorYAt(WIDTH / 4) - PLAYER_RADIUS,
       vx: 0,
@@ -281,6 +288,17 @@ class Game {
       deathAnimationDuration: 500,
       health: 100
     };
+    if (this.gameMode === 'teamDeathmatch') {
+      const redCount = Object.values(this.players).filter(p => p.team === 'red').length;
+      const blueCount = Object.values(this.players).filter(p => p.team === 'blue').length;
+      if (redCount < blueCount) {
+        this.players[id].team = 'red';
+      } else if (blueCount < redCount) {
+        this.players[id].team = 'blue';
+      } else {
+        this.players[id].team = Math.random() < 0.5 ? 'red' : 'blue';
+      }
+    }
   }
 
   removePlayer(id) {
@@ -294,6 +312,9 @@ class Game {
         ...player.input,
         ...input
       };
+      if (input.type === 'switchTeam' && this.gameMode === 'teamDeathmatch') {
+        player.team = player.team === 'red' ? 'blue' : 'red';
+      }
       if (input.type === 'bazooka_fire') {
         if (this.projectiles.length < MAX_PROJECTILES) {
           const velocity = BAZOOKA_MAX_VELOCITY * input.power;
@@ -330,6 +351,10 @@ class Game {
       this.timer -= dt;
       if (this.timer <= 0) {
         this.state = 'gameOver';
+        if (this.gameMode === 'teamDeathmatch') {
+          this.winner = this.redTeamScore > this.blueTeamScore ? 'red' :
+                        this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
+        }
         return;
       }
     }
@@ -621,7 +646,14 @@ class Game {
     }
 
     // Check win conditions
-    if (this.gameMode === 'deathmatch') {
+    if (this.gameMode === 'teamDeathmatch') {
+      if (this.redTeamScore >= this.killLimit || this.blueTeamScore >= this.killLimit) {
+        this.state = 'gameOver';
+        this.winner = this.redTeamScore > this.blueTeamScore ? 'red' :
+                      this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
+        return;
+      }
+    } else if (this.gameMode === 'deathmatch') {
       for (const id in this.players) {
         if (this.players[id].score >= this.killLimit) {
           this.state = 'gameOver';
@@ -662,23 +694,41 @@ class Game {
         const proximity = 1 - (dist / BLAST_RADIUS); // 1 at center, 0 at edge
         const damage = 55 * proximity; // 55% at center, 0% at edge
 
-        // Apply damage only if not self or if friendly fire is enabled
-        if (id !== proj.ownerId || this.friendlyFire) {
+        const isSameTeam = this.gameMode === 'deathmatch' 
+        ? id === proj.ownerId 
+        : this.players[proj.ownerId].team === player.team;
+
+        if (!isSameTeam || this.friendlyFire) {
           player.health -= damage;
           if (player.health <= 0) {
             player.isDying = true;
             player.deathAnimationProgress = 0;
-            if (this.gameMode === 'deathmatch' && proj.ownerId && this.players[proj.ownerId]) {
-              if (id === proj.ownerId) {
-                if (this.friendlyFire) {
-                  this.players[proj.ownerId].score -= 1; // Decrement score for self-kill
+            if ((this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') && 
+                proj.ownerId && this.players[proj.ownerId]) {
+                  if (!isSameTeam) {
+                    if (this.gameMode === 'teamDeathmatch') {
+                      const ownerTeam = this.players[proj.ownerId].team;
+                      if (ownerTeam === 'red') {
+                        this.redTeamScore += 1;
+                      } else if (ownerTeam === 'blue') {
+                        this.blueTeamScore += 1;
+                      }
+                      this.players[proj.ownerId].score += 1; // Optional: keep individual score
+                    } else {
+                      this.players[proj.ownerId].score += 1; // Deathmatch mode
+                    }
+                  } else if (this.friendlyFire && this.gameMode === 'teamDeathmatch') {
+                    const ownerTeam = this.players[proj.ownerId].team;
+                    if (ownerTeam === 'red') {
+                      this.redTeamScore -= 1;
+                    } else if (ownerTeam === 'blue') {
+                      this.blueTeamScore -= 1;
+                    }
+                    this.players[proj.ownerId].score -= 1; // Optional: keep individual score
+                  }
                 }
-              } else {
-                this.players[proj.ownerId].score += 1; // Increment score for killing another player
               }
             }
-          }
-        }
 
         // Apply blast force (unchanged)
         const force = MAX_BLAST_FORCE * proximity;
@@ -699,6 +749,10 @@ class Game {
     this.projectiles = [];
     this.impacts = [];
     this.coinSpawnTimer = COIN_SPAWN_INTERVAL * 1000;
+    if (this.gameMode === 'teamDeathmatch') {
+      this.redTeamScore = 0;
+      this.blueTeamScore = 0;
+    }
     for (const id in this.players) {
       const player = this.players[id];
       player.x = WIDTH / 4;
@@ -743,6 +797,7 @@ class Game {
       coins: this.coins,
       chatHistory: this.chatHistory,
       state: this.state,
+      winner: this.winner,
       timer: this.timer,
       duration: this.timeLimit,
       terrain: {
@@ -754,7 +809,9 @@ class Game {
       impacts: this.impacts.map(impact => ({
         ...impact
       })),
-      gameMode: this.gameMode
+      gameMode: this.gameMode,
+      redTeamScore: this.redTeamScore,
+      blueTeamScore: this.blueTeamScore
     };
   }
 }
