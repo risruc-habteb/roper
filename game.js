@@ -8,12 +8,12 @@ const GROUND_ACCELERATION = 1300;
 const GROUND_FRICTION = 100;
 const MAX_SPEED_ALONG_SLOPE = 500;
 const ROPE_SPEED = 1350;
-const ROPE_MAX_LENGTH = 300;
+const ROPE_MAX_LENGTH = 375;
 
 // Map and Terrain Constants
-const WIDTH = 1600;                    // Width of the game canvas
-const HEIGHT = 800;                   // Height of the game canvas
-const N_TERRAIN_SEGMENTS = 48;        // Number of terrain segments (controls horizontal resolution)
+const WIDTH = 1600; // Width of the game canvas
+const HEIGHT = 800; // Height of the game canvas
+const N_TERRAIN_SEGMENTS = 48; // Number of terrain segments (controls horizontal resolution)
 const MIN_CAVE_HEIGHT = 250;
 const CENTERLINE_F_MIN = 0.25;
 const CENTERLINE_F_MAX = .75;
@@ -21,26 +21,25 @@ const CENTERLINE_A_MIN = HEIGHT / 8;
 const CENTERLINE_A_MAX = HEIGHT / 4;
 
 // Terrain Generation Constants
-const FLOOR_NOISE_AMPLITUDE = 0;    // -10 to 10
+const FLOOR_NOISE_AMPLITUDE = 0; // -10 to 10
 const CEILING_NOISE_AMPLITUDE = 30; // -30 TO 30
 const HEIGHT_VARIATION_MAX = 600;
-const TERRAIN_HEIGHT_VARIATION = 600; // Variation in height between floor and ceiling//
-const PLAYER_RADIUS = 10;
+
+const PLAYER_RADIUS = 14;
 const COIN_RADIUS = 14;
 const GRAVITY = 400;
 const SWING_ACCELERATION = 500;
 const ROPE_LENGTH_CHANGE_SPEED = 300;
 const MIN_ROPE_LENGTH = 0;
-const MAX_ROPE_LENGTH = 420;
-const JUMP_VELOCITY = -275;
+const MAX_ROPE_LENGTH = 450;
+const JUMP_VELOCITY = -300;
 const COIN_LIFETIME = 5;
 const COIN_SPAWN_INTERVAL = 2;
 const COLLISION_ENERGY_LOSS = 0.5;
-const BAZOOKA_MAX_VELOCITY = 750;
-const PROJECTILE_WIDTH = 20;
-const PROJECTILE_HEIGHT = 10;
+const BAZOOKA_MAX_VELOCITY = 1000;
+const PROJECTILE_WIDTH = 25;
 const MAX_PROJECTILES = 50;
-const BLAST_RADIUS = 75;
+const BLAST_RADIUS = 85;
 const BLAST_DURATION = 0.25;
 const MAX_BLAST_FORCE = 750;
 
@@ -90,9 +89,9 @@ class Game {
     this.redTeamScore = this.gameMode === 'teamDeathmatch' ? 0 : undefined;
     this.blueTeamScore = this.gameMode === 'teamDeathmatch' ? 0 : undefined;
     // Enable friendlyFire for both Deathmatch and Team Deathmatch
-    this.friendlyFire = (this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') 
-      ? (options.friendlyFire || false) 
-      : false;
+    this.friendlyFire = (this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') ?
+      (options.friendlyFire || false) :
+      false;
     this.killLimit = this.gameMode === 'deathmatch' ? (options.killLimit || Infinity) : Infinity;
     this.goldWinLimit = this.gameMode === 'goldrush' ? (options.goldWinLimit || Infinity) : Infinity;
     this.timeLimit = options.timeLimit || Infinity;
@@ -117,11 +116,12 @@ class Game {
 
   generateTerrain() {
     // Generate x-coordinates
-    this.x = Array.from(
-      { length: N_TERRAIN_SEGMENTS + 1 },
+    this.x = Array.from({
+        length: N_TERRAIN_SEGMENTS + 1
+      },
       (_, i) => i * (WIDTH / N_TERRAIN_SEGMENTS)
     );
-  
+
     // Generate centerline parameters
     const f1 = Math.random() * (CENTERLINE_F_MAX - CENTERLINE_F_MIN) + CENTERLINE_F_MIN;
     const f2 = Math.random() * (CENTERLINE_F_MAX - CENTERLINE_F_MIN) + CENTERLINE_F_MIN;
@@ -129,34 +129,34 @@ class Game {
     const A2 = Math.random() * (CENTERLINE_A_MAX - CENTERLINE_A_MIN) + CENTERLINE_A_MIN;
     const phi1 = Math.random() * 2 * Math.PI;
     const phi2 = Math.random() * 2 * Math.PI;
-  
+
     // Compute centerline
     const y_center = this.x.map(x =>
       HEIGHT / 2 + A1 * Math.cos(2 * Math.PI * f1 * x / WIDTH + phi1) +
-                   A2 * Math.cos(2 * Math.PI * f2 * x / WIDTH + phi2)
+      A2 * Math.cos(2 * Math.PI * f2 * x / WIDTH + phi2)
     );
-  
+
     // Generate noise arrays (assuming generateNoise returns 0 to 1)
     const floor_noise = generateNoise(N_TERRAIN_SEGMENTS, 2)
       .map(n => (n - 0.5) * 2 * FLOOR_NOISE_AMPLITUDE); // -10 to 10
     const ceiling_noise = generateNoise(N_TERRAIN_SEGMENTS, 2)
       .map(n => (n - 0.5) * 2 * CEILING_NOISE_AMPLITUDE); // -30 to 30
     const height_variation = generateNoise(N_TERRAIN_SEGMENTS, 5); // 0 to 1, smoother
-  
+
     // Compute floor and ceiling
     this.yFloor = [];
     this.yCeiling = [];
     for (let i = 0; i <= N_TERRAIN_SEGMENTS; i++) {
       const h_base = MIN_CAVE_HEIGHT + height_variation[i] * HEIGHT_VARIATION_MAX;
-    
+
       // Correctly position ceiling above and floor below the centerline
       let y_ceiling_temp = y_center[i] - (h_base / 2) + ceiling_noise[i];
       let y_floor_temp = y_center[i] + (h_base / 2) + floor_noise[i];
-    
+
       // Clamp to screen bounds (e.g., leave space for player)
       y_ceiling_temp = Math.max(PLAYER_RADIUS, y_ceiling_temp);
       y_floor_temp = Math.min(HEIGHT - PLAYER_RADIUS, y_floor_temp);
-    
+
       // Ensure minimum cave height
       if (y_floor_temp - y_ceiling_temp < MIN_CAVE_HEIGHT) {
         y_ceiling_temp = Math.max(PLAYER_RADIUS, y_floor_temp - MIN_CAVE_HEIGHT);
@@ -166,30 +166,54 @@ class Game {
           y_floor_temp = Math.min(y_floor_temp, HEIGHT - PLAYER_RADIUS);
         }
       }
-    
+
       this.yCeiling[i] = y_ceiling_temp;
       this.yFloor[i] = y_floor_temp;
     }
-  
+
     // Generate terrain lines for collision detection
     this.terrainLines = [];
     for (let i = 0; i < N_TERRAIN_SEGMENTS; i++) {
       this.terrainLines.push({
-        p1: { x: this.x[i], y: this.yFloor[i] },
-        p2: { x: this.x[i + 1], y: this.yFloor[i + 1] }
+        p1: {
+          x: this.x[i],
+          y: this.yFloor[i]
+        },
+        p2: {
+          x: this.x[i + 1],
+          y: this.yFloor[i + 1]
+        }
       });
       this.terrainLines.push({
-        p1: { x: this.x[i], y: this.yCeiling[i] },
-        p2: { x: this.x[i + 1], y: this.yCeiling[i + 1] }
+        p1: {
+          x: this.x[i],
+          y: this.yCeiling[i]
+        },
+        p2: {
+          x: this.x[i + 1],
+          y: this.yCeiling[i + 1]
+        }
       });
     }
     this.terrainLines.push({
-      p1: { x: 0, y: this.yCeiling[0] },
-      p2: { x: 0, y: this.yFloor[0] }
+      p1: {
+        x: 0,
+        y: this.yCeiling[0]
+      },
+      p2: {
+        x: 0,
+        y: this.yFloor[0]
+      }
     });
     this.terrainLines.push({
-      p1: { x: WIDTH, y: this.yCeiling[N_TERRAIN_SEGMENTS] },
-      p2: { x: WIDTH, y: this.yFloor[N_TERRAIN_SEGMENTS] }
+      p1: {
+        x: WIDTH,
+        y: this.yCeiling[N_TERRAIN_SEGMENTS]
+      },
+      p2: {
+        x: WIDTH,
+        y: this.yFloor[N_TERRAIN_SEGMENTS]
+      }
     });
   }
 
@@ -331,8 +355,8 @@ class Game {
           const projectile = {
             x: player.x,
             y: player.y,
-            vx: input.directionX * velocity,
-            vy: input.directionY * velocity,
+            vx: input.directionX * velocity + player.vx / 2,
+            vy: input.directionY * velocity + player.vy / 2,
             rotation: 0,
             ownerId: id,
             hasExitedOwnerHitbox: false
@@ -363,7 +387,7 @@ class Game {
         this.state = 'gameOver';
         if (this.gameMode === 'teamDeathmatch') {
           this.winner = this.redTeamScore > this.blueTeamScore ? 'red' :
-                        this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
+            this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
         }
         return;
       }
@@ -660,7 +684,7 @@ class Game {
       if (this.redTeamScore >= this.killLimit || this.blueTeamScore >= this.killLimit) {
         this.state = 'gameOver';
         this.winner = this.redTeamScore > this.blueTeamScore ? 'red' :
-                      this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
+          this.blueTeamScore > this.redTeamScore ? 'blue' : 'tie';
         return;
       }
     } else if (this.gameMode === 'deathmatch') {
@@ -681,9 +705,14 @@ class Game {
   }
 
   handleImpact(proj) {
-    const impact = { x: proj.x, y: proj.y, time: 0, maxTime: BLAST_DURATION };
+    const impact = {
+      x: proj.x,
+      y: proj.y,
+      time: 0,
+      maxTime: BLAST_DURATION
+    };
     this.impacts.push(impact);
-  
+
     let hitNonTeam = false; // Flag to track if the shot hit a non-team player
     const owner = this.players[proj.ownerId];
 
@@ -696,24 +725,24 @@ class Game {
       if (dist < BLAST_RADIUS) {
         const proximity = 1 - (dist / BLAST_RADIUS);
         const damage = 55 * proximity;
-        const isSameTeam = this.gameMode === 'deathmatch'
-          ? id === proj.ownerId
-          : this.players[proj.ownerId].team === player.team;
-  
+        const isSameTeam = this.gameMode === 'deathmatch' ?
+          id === proj.ownerId :
+          this.players[proj.ownerId].team === player.team;
+
         if (!isSameTeam || this.friendlyFire) {
           const actualDamage = Math.min(damage, player.health); // Cap damage at remaining health
           player.health -= damage;
-  
+
           if (!isSameTeam && owner) {
             owner.damageDealt += actualDamage; // Add damage dealt to non-team players
             hitNonTeam = true; // Mark shot as a hit
           }
-  
+
           if (player.health <= 0) {
             player.isDying = true;
             player.deathAnimationProgress = 0;
             player.deaths += 1; // Increment deaths
-  
+
             if (proj.ownerId && this.players[proj.ownerId]) {
               const killer = this.players[proj.ownerId];
               if (isSameTeam) {

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Rope Slingers</title>
@@ -7,119 +8,165 @@
     <style>
         body {
             margin: 0;
-            background: #ffffff; /* White background */
+            background: #ffffff;
+            /* White background */
             font-family: Arial, sans-serif;
         }
+
         #mainContainer {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             text-align: center;
         }
+
         h1 {
             font-family: 'Press Start 2P', cursive;
             font-size: 48px;
-            color: #000; /* Black for contrast */
+            color: #000;
+            /* Black for contrast */
             margin-bottom: 0;
         }
+
         #userSection {
             margin: 20px 0;
-            background: #f5f5f5; /* Very light grey, darker than mainContainer */
+            background: #f5f5f5;
+            /* Very light grey, darker than mainContainer */
         }
+
         #currentNickname {
             margin-top: 5px;
             font-style: italic;
-            color: #555; /* Medium-dark grey */
+            color: #555;
+            /* Medium-dark grey */
         }
+
         #mainContent {
             display: grid;
             grid-template-columns: 1fr 2fr;
             gap: 20px;
             margin-top: 20px;
         }
+
         #roomCreation {
-            background: #eaeaea; /* Light grey, darker than mainContainer */
+            background: #eaeaea;
+            /* Light grey, darker than mainContainer */
             padding: 15px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
+
         #roomBrowser {
-            background: #eaeaea; /* White, lighter as game lobby display */
+            background: #eaeaea;
+            /* White, lighter as game lobby display */
             padding: 15px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
+
         .option-group {
             display: flex;
             gap: 10px;
             justify-content: center;
         }
+
         .option {
             padding: 5px 15px;
             border: 1px solid #ccc;
-            background-color: #d8d8d8; /* Medium-light grey, darker than roomCreation */
+            background-color: #d8d8d8;
+            /* Medium-light grey, darker than roomCreation */
             cursor: pointer;
             transition: all 0.2s;
-            color: #333; /* Dark grey for text */
-            border-radius: 0; /* Rectangular */
+            color: #333;
+            /* Dark grey for text */
+            border-radius: 0;
+            /* Rectangular */
         }
+
         .option:hover {
-            background-color: #c0c0c0; /* Darker grey on hover */
+            background-color: #c0c0c0;
+            /* Darker grey on hover */
         }
+
         .option.selected {
-            background-color: #333; /* Very dark grey for selected */
-            color: #ffffff; /* White text for contrast */
+            background-color: #333;
+            /* Very dark grey for selected */
+            color: #ffffff;
+            /* White text for contrast */
         }
+
         #roomTable {
             width: 100%;
             border-collapse: collapse;
-            background: #fcfcfc; /* Very light grey, darker than roomBrowser */
+            background: #fcfcfc;
+            /* Very light grey, darker than roomBrowser */
         }
-        #roomTable th, #roomTable td {
+
+        #roomTable th,
+        #roomTable td {
             border: 1px solid #bbbbbb;
             padding: 8px;
             text-align: center;
         }
+
         #roomTable th {
-            background-color: #cccccc; /* Light grey, darker than table */
-            color: #333; /* Dark grey text */
+            background-color: #cccccc;
+            /* Light grey, darker than table */
+            color: #333;
+            /* Dark grey text */
         }
+
         #roomTable td {
-            color: #555; /* Medium-dark grey text */
+            color: #555;
+            /* Medium-dark grey text */
         }
+
         button {
             padding: 10px 20px;
             border: none;
-            background-color: #555; /* Medium-dark grey */
-            color: #ffffff; /* White text */
+            background-color: #555;
+            /* Medium-dark grey */
+            color: #ffffff;
+            /* White text */
             cursor: pointer;
             transition: background-color 0.2s;
-            border-radius: 0; /* Rectangular */
+            border-radius: 0;
+            /* Rectangular */
         }
+
         button:hover {
-            background-color: #333; /* Very dark grey on hover */
+            background-color: #333;
+            /* Very dark grey on hover */
         }
+
         #gameContainer {
             display: none;
             flex-direction: column;
             align-items: center;
             width: 100%;
-            background: #ffffff; /* White, though canvas controls rendering */
+            background: #ffffff;
+            /* White, though canvas controls rendering */
         }
+
         canvas {
             border: 1px solid black;
         }
+
         input[type="text"] {
             padding: 5px;
             border: 1px solid #ccc;
-            background-color: #ffffff; /* White */
-            color: #555; /* Medium-dark grey text */
+            background-color: #ffffff;
+            /* White */
+            color: #555;
+            /* Medium-dark grey text */
             width: 200px;
         }
+
         @media (max-width: 768px) {
             #mainContent {
                 grid-template-columns: 1fr;
             }
         }
     </style>
+
 <body>
     <div id="mainContainer">
         <h1>Rope Slingers</h1>
@@ -182,22 +229,61 @@
             <button id="resetButton" style="display: none;" onclick="resetGame()">Reset Game</button>
         </div>
         <canvas id="canvas"></canvas>
-        <div id="statsOverlay" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255, 255, 255, 0.9); padding: 20px; border: 1px solid black; z-index: 10;">
-            <table id="statsTable" style="border-collapse: collapse;">
-              <thead>
+        <div id="statsOverlay"
+        style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #f5f5f5; padding: 20px; border: 1px solid #bbbbbb; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); z-index: 10;">
+        <table id="statsTable" style="border-collapse: collapse; background: #fcfcfc; width: 100%;">
+            <thead>
                 <tr>
-                  <th style="border: 1px solid black; padding: 5px;">Player</th>
-                  <th style="border: 1px solid black; padding: 5px;">Kills</th>
-                  <th style="border: 1px solid black; padding: 5px;">Deaths</th>
-                  <th style="border: 1px solid black; padding: 5px;">Team Kills</th>
-                  <th style="border: 1px solid black; padding: 5px;">Damage Dealt</th>
-                  <th style="border: 1px solid black; padding: 5px;">Shots Fired</th>
-                  <th style="border: 1px solid black; padding: 5px;">Shots Hit</th>
-                  <th style="border: 1px solid black; padding: 5px;">Accuracy</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Player</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Kills</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Deaths</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Team Kills</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Damage Dealt</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Shots Fired</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Shots Hit</th>
+                    <th style="border: 1px solid #bbbbbb; padding: 8px; background-color: #cccccc; color: #333;">Accuracy</th>
                 </tr>
-              </thead>
-              <tbody style="text-align: center;"></tbody>
-            </table>
+            </thead>
+            <tbody style="text-align: center; color: #555;"></tbody>
+        </table>
+    </div>
+    <div id="controlsOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; overflow: auto;">
+        <style>
+            #controlsOverlay h2 { font-size: 14px; color: #333; }
+            #controlsOverlay h3 { font-size: 12px; color: #333; }
+            #controlsOverlay li { font-size: 10px; color: #555; }
+        </style>
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #f5f5f5; padding: 15px; max-width: 80%; max-height: 80%; overflow: auto; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
+            <h2>Controls</h2>
+            <h3>Movement</h3>
+            <ul>
+                <li><strong>A</strong>: Move left</li>
+                <li><strong>D</strong>: Move right</li>
+                <li><strong>W</strong>: Shorten rope (when attached)</li>
+                <li><strong>S</strong>: Lengthen rope (when attached)</li>
+            </ul>
+            <h3>Actions</h3>
+            <ul>
+                <li><strong>Space</strong>: Jump (double jump available)</li>
+                <li><strong>Left Mouse Click</strong>: Fire rope</li>
+                <li><strong>Right Mouse Button</strong>: Aim and fire bazooka (hold to aim, release to fire)</li>
+            </ul>
+            <h3>Chat</h3>
+            <ul>
+                <li><strong>Enter</strong>: Start chatting</li>
+                <li><strong>Type your message</strong></li>
+                <li><strong>Enter</strong>: Send message</li>
+                <li><strong>Escape</strong>: Cancel chatting</li>
+                <li><strong>Backspace</strong>: Delete character</li>
+            </ul>
+            <h3>Other</h3>
+            <ul>
+                <li><strong>T</strong>: Switch team (in team deathmatch mode)</li>
+                <li><strong>Tab</strong>: Show score screen</li>
+                <li><strong>` or ~</strong>: Show this controls screen</li>
+            </ul>
+        </div>
+    </div>
           </div>
     </div>
 
@@ -206,6 +292,7 @@
     <script>
         let currentNickname = 'Guest';
         socket.emit('setNickname', 'narp');
+
         function setNickname() {
             const input = document.getElementById('nickname').value.trim();
             if (input) {
@@ -226,40 +313,47 @@
         }
 
         document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('option')) {
-    const group = e.target.parentElement;
-    const groupName = group.getAttribute('data-name');
-    group.querySelectorAll('.option').forEach(opt => opt.classList.remove('selected'));
-    e.target.classList.add('selected');
-    if (groupName === 'gameMode') {
-      const gameMode = e.target.getAttribute('data-value');
-      const label = document.getElementById('scoreLimitLabel');
-      if (gameMode === 'deathmatch') {
-        label.textContent = 'Kill Limit';
-      } else if (gameMode === 'goldrush') {
-        label.textContent = 'Gold Win Limit';
-      } else if (gameMode === 'teamDeathmatch') {
-        label.textContent = 'Team Kill Limit';
-      }
-    }
-  }
-});
+            if (e.target.classList.contains('option')) {
+                const group = e.target.parentElement;
+                const groupName = group.getAttribute('data-name');
+                group.querySelectorAll('.option').forEach(opt => opt.classList.remove('selected'));
+                e.target.classList.add('selected');
+                if (groupName === 'gameMode') {
+                    const gameMode = e.target.getAttribute('data-value');
+                    const label = document.getElementById('scoreLimitLabel');
+                    if (gameMode === 'deathmatch') {
+                        label.textContent = 'Kill Limit';
+                    } else if (gameMode === 'goldrush') {
+                        label.textContent = 'Gold Win Limit';
+                    } else if (gameMode === 'teamDeathmatch') {
+                        label.textContent = 'Team Kill Limit';
+                    }
+                }
+            }
+        });
 
-function createRoom() {
-  const gameMode = getSelectedValue('gameMode');
-  const friendlyFire = getSelectedValue('friendlyFire') === 'on';
-  const timeLimit = getSelectedValue('timeLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('timeLimit'));
-  const scoreLimit = getSelectedValue('scoreLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue('scoreLimit'));
-  let options = { gameMode, friendlyFire, timeLimit };
-  if (gameMode === 'deathmatch') {
-    options.killLimit = scoreLimit;
-  } else if (gameMode === 'goldrush') {
-    options.goldWinLimit = scoreLimit;
-  } else if (gameMode === 'teamDeathmatch') {
-    options.teamKillLimit = scoreLimit;
-  }
-  socket.emit('createRoom', options);
-}
+        function createRoom() {
+            const gameMode = getSelectedValue('gameMode');
+            const friendlyFire = getSelectedValue('friendlyFire') === 'on';
+            const timeLimit = getSelectedValue('timeLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue(
+                'timeLimit'));
+            const scoreLimit = getSelectedValue('scoreLimit') === 'Infinity' ? Infinity : parseInt(getSelectedValue(
+                'scoreLimit'));
+            let options = {
+                gameMode,
+                friendlyFire,
+                timeLimit
+            };
+            if (gameMode === 'deathmatch') {
+                options.killLimit = scoreLimit;
+            } else if (gameMode === 'goldrush') {
+                options.goldWinLimit = scoreLimit;
+            } else if (gameMode === 'teamDeathmatch') {
+                options.teamKillLimit = scoreLimit;
+            }
+            socket.emit('createRoom', options);
+        }
     </script>
 </body>
+
 </html>

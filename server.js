@@ -20,7 +20,11 @@ const rooms = {};
 // Create the persistent lobby room with default settings
 const lobbyRoomId = 'lobby';
 rooms[lobbyRoomId] = {
-  game: new Game(lobbyRoomId, { gameMode: 'deathmatch', friendlyFire: true, timeLimit: Infinity }),
+  game: new Game(lobbyRoomId, {
+    gameMode: 'deathmatch',
+    friendlyFire: true,
+    timeLimit: Infinity
+  }),
   players: [],
   name: 'Lobby',
   host: null,
@@ -51,7 +55,10 @@ io.on('connection', (socket) => {
         if (player) {
           player.displayName = socket.nickname;
           rooms[currentRoom].game.players[socket.id].displayName = socket.nickname;
-          io.to(currentRoom).emit('playerUpdated', { id: socket.id, displayName: socket.nickname });
+          io.to(currentRoom).emit('playerUpdated', {
+            id: socket.id,
+            displayName: socket.nickname
+          });
         }
       }
     }
@@ -64,7 +71,10 @@ io.on('connection', (socket) => {
     const roomName = `${displayName}'s Room`;
     rooms[roomId] = {
       game: new Game(roomId, options),
-      players: [{ id: socket.id, displayName }],
+      players: [{
+        id: socket.id,
+        displayName
+      }],
       name: roomName,
       host: socket.id,
       gameMode: options.gameMode,
@@ -77,21 +87,32 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
     rooms[roomId].game.addPlayer(socket.id, displayName);
     console.log(`${displayName} created and joined room ${roomId} named "${roomName}" with options:`, options);
-    socket.emit('roomJoined', { roomId, isHost: true });
+    socket.emit('roomJoined', {
+      roomId,
+      isHost: true
+    });
     broadcastRoomList();
   });
 
   // Join a room, respecting max players
-  socket.on('joinRoom', ({ roomId }) => {
+  socket.on('joinRoom', ({
+    roomId
+  }) => {
     if (rooms[roomId] && (rooms[roomId].players.length < rooms[roomId].maxPlayers || roomId === lobbyRoomId)) {
       const displayName = socket.nickname || socket.id;
       socket.join(roomId);
       currentRoom = roomId;
-      rooms[roomId].players.push({ id: socket.id, displayName });
+      rooms[roomId].players.push({
+        id: socket.id,
+        displayName
+      });
       rooms[roomId].game.addPlayer(socket.id, displayName);
       io.to(roomId).emit('playerJoined', displayName);
       console.log(`${displayName} joined room ${roomId}`);
-      socket.emit('roomJoined', { roomId, isHost: rooms[roomId].host === socket.id });
+      socket.emit('roomJoined', {
+        roomId,
+        isHost: rooms[roomId].host === socket.id
+      });
       broadcastRoomList();
     } else {
       socket.emit('error', 'Room full or invalid');
@@ -169,7 +190,9 @@ function sendRoomList(socket) {
 // Game loop for all rooms (60 FPS)
 setInterval(() => {
   for (const roomId in rooms) {
-    const { game } = rooms[roomId];
+    const {
+      game
+    } = rooms[roomId];
     game.update(1000 / 60);
     io.to(roomId).emit('gameState', game.getState());
   }
