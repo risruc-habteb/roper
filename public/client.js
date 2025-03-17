@@ -190,13 +190,13 @@ socket.on('error', (msg) => {
 
 // Keyboard and Canvas Event Listeners
 document.addEventListener('keydown', (e) => {
-    if (!gameState || gameState.state !== 'playing') return;
     if (e.key === '`' || e.key === '~') {
         isStatsVisible = true;
         updateStatsTable();
         document.getElementById('statsOverlay').style.display = 'block';
         e.preventDefault();
       }
+      if (!gameState || gameState.state !== 'playing') return;
     if (e.key === 't' && !isChatting && gameState.gameMode === 'teamDeathmatch') {
         socket.emit('input', { type: 'switchTeam' });
         e.preventDefault();
@@ -511,7 +511,7 @@ function updateStatsTable() {
       tbody.appendChild(row);
     });
   }
-  
+
 function render() {
     if (!gameState) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
