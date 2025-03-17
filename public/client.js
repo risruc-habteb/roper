@@ -16,6 +16,7 @@ let isAiming = false;
 let aimStartTime = 0;
 let cursorX = 0;
 let cursorY = 0;
+let isStatsVisible = false;
 
 const VIRTUAL_WIDTH = 1600;
 const VIRTUAL_HEIGHT = 800;
@@ -190,6 +191,12 @@ socket.on('error', (msg) => {
 // Keyboard and Canvas Event Listeners
 document.addEventListener('keydown', (e) => {
     if (!gameState || gameState.state !== 'playing') return;
+    if (e.key === '`' || e.key === '~') {
+        isStatsVisible = true;
+        updateStatsTable();
+        document.getElementById('statsOverlay').style.display = 'block';
+        e.preventDefault();
+      }
     if (e.key === 't' && !isChatting && gameState.gameMode === 'teamDeathmatch') {
         socket.emit('input', { type: 'switchTeam' });
         e.preventDefault();
@@ -228,6 +235,12 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('keyup', (e) => {
     if (!gameState || gameState.state !== 'playing' || isChatting) return;
+        if (e.key === '`' || e.key === '~') {
+          isStatsVisible = false;
+          document.getElementById('statsOverlay').style.display = 'none';
+          e.preventDefault();
+        }
+        
 
     const input = {};
     if (e.key === 'a') input.left = false;
@@ -476,6 +489,29 @@ function renderImpact(impact) {
     ctx.fill();
 }
 
+function updateStatsTable() {
+    if (!gameState) return;
+    const tbody = document.getElementById('statsTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    gameState.players.forEach(player => {
+      const accuracy = player.shotsFired > 0 
+        ? ((player.shotsHit / player.shotsFired) * 100).toFixed(2) + '%' 
+        : '0%';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td style="border: 1px solid black; padding: 5px;">${player.displayName}</td>
+        <td style="border: 1px solid black; padding: 5px;">${player.score}</td>
+        <td style="border: 1px solid black; padding: 5px;">${player.deaths}</td>
+        <td style="border: 1px solid black; padding: 5px;">${player.teamKills}</td>
+        <td style="border: 1px solid black; padding: 5px;">${Math.floor(player.damageDealt)}</td>
+        <td style="border: 1px solid black; padding: 5px;">${player.shotsFired}</td>
+        <td style="border: 1px solid black; padding: 5px;">${player.shotsHit}</td>
+        <td style="border: 1px solid black; padding: 5px;">${accuracy}</td>
+      `;
+      tbody.appendChild(row);
+    });
+  }
+  
 function render() {
     if (!gameState) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);

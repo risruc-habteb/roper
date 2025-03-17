@@ -286,7 +286,12 @@ class Game {
       isDying: false,
       deathAnimationProgress: 0,
       deathAnimationDuration: 500,
-      health: 100
+      health: 100,
+      deaths: 0,
+      teamKills: 0,
+      shotsFired: 0,
+      shotsHit: 0,
+      damageDealt: 0
     };
     if (this.gameMode === 'teamDeathmatch') {
       const redCount = Object.values(this.players).filter(p => p.team === 'red').length;
@@ -321,6 +326,7 @@ class Game {
           this.handleImpact(existingProj);
           this.projectiles = this.projectiles.filter(p => p !== existingProj);
         } else if (this.projectiles.length < MAX_PROJECTILES) {
+          player.shotsFired += 1; // Increment shots fired
           const velocity = BAZOOKA_MAX_VELOCITY * input.power;
           const projectile = {
             x: player.x,
@@ -675,65 +681,56 @@ class Game {
   }
 
   handleImpact(proj) {
-    const impact = {
-      x: proj.x,
-      y: proj.y,
-      time: 0,
-      maxTime: BLAST_DURATION
-    };
+    const impact = { x: proj.x, y: proj.y, time: 0, maxTime: BLAST_DURATION };
     this.impacts.push(impact);
+  
+    let hitNonTeam = false; // Flag to track if the shot hit a non-team player
+    const owner = this.players[proj.ownerId];
 
     for (const id in this.players) {
       const player = this.players[id];
-      if (player.isDying) continue; // Skip already dying players
+      if (player.isDying) continue;
       const dx = player.x - proj.x;
       const dy = player.y - proj.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < BLAST_RADIUS) {
-        // Disengage the rope if it is attached
-        if (player.rope.state === 'attached') {
-          player.rope.state = 'none';
-        }
-
-        const proximity = 1 - (dist / BLAST_RADIUS); // 1 at center, 0 at edge
-        const damage = 55 * proximity; // 55% at center, 0% at edge
-
-        const isSameTeam = this.gameMode === 'deathmatch' 
-        ? id === proj.ownerId 
-        : this.players[proj.ownerId].team === player.team;
-
+        const proximity = 1 - (dist / BLAST_RADIUS);
+        const damage = 55 * proximity;
+        const isSameTeam = this.gameMode === 'deathmatch'
+          ? id === proj.ownerId
+          : this.players[proj.ownerId].team === player.team;
+  
         if (!isSameTeam || this.friendlyFire) {
+          const actualDamage = Math.min(damage, player.health); // Cap damage at remaining health
           player.health -= damage;
+  
+          if (!isSameTeam && owner) {
+            owner.damageDealt += actualDamage; // Add damage dealt to non-team players
+            hitNonTeam = true; // Mark shot as a hit
+          }
+  
           if (player.health <= 0) {
             player.isDying = true;
             player.deathAnimationProgress = 0;
-            if ((this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') && 
-                proj.ownerId && this.players[proj.ownerId]) {
-                  if (!isSameTeam) {
-                    if (this.gameMode === 'teamDeathmatch') {
-                      const ownerTeam = this.players[proj.ownerId].team;
-                      if (ownerTeam === 'red') {
-                        this.redTeamScore += 1;
-                      } else if (ownerTeam === 'blue') {
-                        this.blueTeamScore += 1;
-                      }
-                      this.players[proj.ownerId].score += 1; // Optional: keep individual score
-                    } else {
-                      this.players[proj.ownerId].score += 1; // Deathmatch mode
-                    }
-                  } else if (this.friendlyFire && this.gameMode === 'teamDeathmatch') {
-                    const ownerTeam = this.players[proj.ownerId].team;
-                    if (ownerTeam === 'red') {
-                      this.redTeamScore -= 1;
-                    } else if (ownerTeam === 'blue') {
-                      this.blueTeamScore -= 1;
-                    }
-                    this.players[proj.ownerId].score -= 1; // Optional: keep individual score
-                  }
+            player.deaths += 1; // Increment deaths
+  
+            if (proj.ownerId && this.players[proj.ownerId]) {
+              const killer = this.players[proj.ownerId];
+              if (isSameTeam) {
+                killer.teamKills += 1; // Increment team kills (includes suicides)
+              } else if (this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') {
+                if (this.gameMode === 'teamDeathmatch') {
+                  const ownerTeam = killer.team;
+                  if (ownerTeam === 'red') this.redTeamScore += 1;
+                  else if (ownerTeam === 'blue') this.blueTeamScore += 1;
+                  killer.score += 1; // Individual kill score
+                } else {
+                  killer.score += 1; // Deathmatch kill
                 }
               }
             }
-
+          }
+        }
         // Apply blast force (unchanged)
         const force = MAX_BLAST_FORCE * proximity;
         const dirX = dx / dist || 0;
@@ -742,6 +739,9 @@ class Game {
         player.vy += dirY * force;
         player.onGround = false;
       }
+    }
+    if (hitNonTeam && owner) {
+      owner.shotsHit += 1; // Increment shots hit if it damaged a non-team player
     }
   }
 
@@ -783,6 +783,13 @@ class Game {
       player.canDoubleJump = false;
       player.isDying = false;
       player.deathAnimationProgress = 0;
+      player.health = 100;
+      // Reset new stats
+      player.deaths = 0;
+      player.teamKills = 0;
+      player.shotsFired = 0;
+      player.shotsHit = 0;
+      player.damageDealt = 0;
     }
     if (this.gameMode === 'goldrush') {
       this.spawnCoin();
@@ -793,10 +800,7 @@ class Game {
     return {
       roomId: this.roomId,
       players: Object.values(this.players).map(player => ({
-        ...player,
-        isDying: player.isDying,
-        deathAnimationProgress: player.deathAnimationProgress,
-        health: player.health
+        ...player
       })),
       coins: this.coins,
       chatHistory: this.chatHistory,
