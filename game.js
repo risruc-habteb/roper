@@ -316,7 +316,11 @@ class Game {
         player.team = player.team === 'red' ? 'blue' : 'red';
       }
       if (input.type === 'bazooka_fire') {
-        if (this.projectiles.length < MAX_PROJECTILES) {
+        const existingProj = this.projectiles.find(p => p.ownerId === id);
+        if (existingProj) {
+          this.handleImpact(existingProj);
+          this.projectiles = this.projectiles.filter(p => p !== existingProj);
+        } else if (this.projectiles.length < MAX_PROJECTILES) {
           const velocity = BAZOOKA_MAX_VELOCITY * input.power;
           const projectile = {
             x: player.x,
