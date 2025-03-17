@@ -10,7 +10,9 @@ let scaleFactor;
 let isChatting = false;
 let chatDraft = '';
 let cursorVisible = true;
+let healthVisible = true;
 let lastBlinkTime = Date.now();
+let healthBlinkTime = Date.now();
 let coinData = new Map();
 let isAiming = false;
 let aimStartTime = 0;
@@ -583,6 +585,11 @@ function render() {
         cursorVisible = !cursorVisible;
         lastBlinkTime = now;
     }
+    if (now - healthBlinkTime > 100) {
+        healthVisible = !healthVisible;
+        healthBlinkTime = now;
+    }
+
 
     // Draw players, ropes, and chat
     gameState.players.forEach(player => {
@@ -621,20 +628,41 @@ function render() {
       ctx.fill();
   
       // Optional: Keep outline for clarity
-      ctx.setLineDash([5 / scaleFactor, 5 / scaleFactor]);
+      ctx.setLineDash([2.5 / scaleFactor, 1.5 / scaleFactor]);
       ctx.strokeStyle = 'black'; // Changed to black for visibility
+      ctx.lineWidth = 1.5; 
       ctx.stroke();
       ctx.setLineDash([]);
   
       ctx.restore();
 
         // Draw name and health indicator
+        const shouldDrawHealthBar = player.health >= 35 || healthVisible;
+        if (shouldDrawHealthBar) {
+            const healthBarRadius = PLAYER_RADIUS + 7;
+            const startAngle = 5 * Math.PI / 4;
+            const endAngle = 7 * Math.PI / 4;
+            const healthFraction = Math.max(0, player.health / 100);
+            const healthAngle = startAngle + (endAngle - startAngle) * healthFraction;
+    
+            // Draw fill
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, healthBarRadius, startAngle, healthAngle, false);
+            ctx.strokeStyle = 'green';
+            ctx.lineWidth = 4 / scaleFactor;
+            ctx.stroke();
+    
+            // Draw outline
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, healthBarRadius, startAngle, endAngle, false);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 0.25 / scaleFactor;
+            ctx.stroke();
+        }
         ctx.fillStyle = 'black';
-        ctx.font = '10px Arial';
+        ctx.font = '12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(player.displayName, player.x, player.y - 15);
-        ctx.fillText(`Health: ${Math.max(0, Math.ceil(player.health))}%`, player.x, player.y - 25);
-
+        ctx.fillText(player.displayName, player.x, player.y - 25);
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
         const baseChatY = player.y - 25;
