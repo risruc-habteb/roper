@@ -723,6 +723,10 @@ class Game {
       const dy = player.y - proj.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < BLAST_RADIUS) {
+        // Disengage the rope if it is attached
+        if (player.rope.state === 'attached') {
+          player.rope.state = 'none';
+        }
         const proximity = 1 - (dist / BLAST_RADIUS);
         const damage = 55 * proximity;
         const isSameTeam = this.gameMode === 'deathmatch' ?
