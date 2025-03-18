@@ -7,7 +7,7 @@ const AIR_FRICTION = 50;
 const GROUND_ACCELERATION = 1300;
 const GROUND_FRICTION = 100;
 const MAX_SPEED_ALONG_SLOPE = 500;
-const ROPE_SPEED = 1350;
+const ROPE_SPEED = 1800;
 const ROPE_MAX_LENGTH = 375;
 
 // Map and Terrain Constants
@@ -751,6 +751,12 @@ class Game {
               const killer = this.players[proj.ownerId];
               if (isSameTeam) {
                 killer.teamKills += 1; // Increment team kills (includes suicides)
+                killer.score -= 1;
+                if (this.gameMode === 'teamDeathmatch') {
+                  const ownerTeam = killer.team;
+                  if (ownerTeam === 'red') this.redTeamScore -= 1;
+                  else if (ownerTeam === 'blue') this.blueTeamScore -= 1;
+                }
               } else if (this.gameMode === 'deathmatch' || this.gameMode === 'teamDeathmatch') {
                 if (this.gameMode === 'teamDeathmatch') {
                   const ownerTeam = killer.team;

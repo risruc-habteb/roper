@@ -21,14 +21,14 @@ const rooms = {};
 const lobbyRoomId = 'lobby';
 rooms[lobbyRoomId] = {
   game: new Game(lobbyRoomId, {
-    gameMode: 'deathmatch',
+    gameMode: 'teamDeathmatch',
     friendlyFire: true,
     timeLimit: Infinity
   }),
   players: [],
   name: 'Lobby',
   host: null,
-  gameMode: 'deathmatch',
+  gameMode: 'teamDeathmatch',
   friendlyFire: true,
   timeLimit: Infinity,
   scoreLimit: Infinity,

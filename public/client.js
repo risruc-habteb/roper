@@ -28,14 +28,13 @@ const COIN_RADIUS = 14;
 const SPIN_SPEED = 4 * Math.PI;
 const ROTATION_SPEED = Math.PI;
 const COIN_LIFETIME = 5;
-const CHAT_LINE_HEIGHT = 12;
-const MAX_CHAT_MESSAGES = 5;
-const CHAT_LOG_X = VIRTUAL_WIDTH - 120;
+const CHAT_LINE_HEIGHT = 16;
+const CHAT_LOG_X = VIRTUAL_WIDTH - 180;
 const CHAT_LOG_MAX_LINES = 20;
 const CHAT_LOG_TOP = VIRTUAL_HEIGHT * 0.1;
 const CHAT_LOG_BOTTOM = VIRTUAL_HEIGHT * 0.9;
 const CHAT_FONT_SIZE = 14;
-const maxMessageWidth = 110;
+const maxMessageWidth = 170;
 const BAZOOKA_MAX_VELOCITY = 1000;
 const PROJECTILE_WIDTH = 25;
 const PROJECTILE_HEIGHT = 10;
@@ -208,7 +207,7 @@ document.addEventListener('keydown', (e) => {
         updateStatsTable();
         document.getElementById('statsOverlay').style.display = 'block';
         e.preventDefault();
-      } else if (e.key === '`' || e.key === '~') {
+      } else if (e.key === '`') {
         isControlsVisible = true;
         document.getElementById('controlsOverlay').style.display = 'block';
         e.preventDefault();
@@ -258,7 +257,7 @@ document.addEventListener('keyup', (e) => {
         isStatsVisible = false;
         document.getElementById('statsOverlay').style.display = 'none';
         e.preventDefault();
-      } else if (e.key === '`' || e.key === '~') {
+      } else if (e.key === '`') {
         isControlsVisible = false;
         document.getElementById('controlsOverlay').style.display = 'none';
         e.preventDefault();
@@ -698,26 +697,6 @@ function render() {
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
         const baseChatY = player.y - 25;
-
-        if (player.id === myId && isChatting) {
-            const displayText = chatDraft + (cursorVisible ? '|' : '');
-            ctx.fillStyle = 'grey';
-            ctx.fillText(displayText, player.x, baseChatY);
-        }
-
-        if (player.chatMessages && player.chatMessages.length > 0) {
-            const visibleMessages = player.chatMessages.slice(0, MAX_CHAT_MESSAGES);
-            visibleMessages.forEach((msg, index) => {
-                const age = (now - msg.timestamp) / 1000;
-                let alpha = 1;
-                if (age > 5) {
-                    alpha = Math.max(0, 1 - (age - 5) / 0.5);
-                }
-                ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
-                const yOffset = baseChatY - (index + 1) * CHAT_LINE_HEIGHT;
-                ctx.fillText(msg.text, player.x, yOffset);
-            });
-        }
     });
 
     // Draw chat log
@@ -753,9 +732,26 @@ function render() {
             });
             y += lines.length * CHAT_LINE_HEIGHT;
         }
+            // Draw chat input below the chat log when chatting
+if (isChatting) {
+    const draftY = CHAT_LOG_BOTTOM + 20;
+    ctx.font = `${CHAT_FONT_SIZE}px Arial`;
+    ctx.fillStyle = 'black';
+
+    // Render "You:" right-aligned, matching chat log sender style
+    ctx.textAlign = 'right';
+    ctx.fillText('say:', usernameX, draftY);
+
+    // Render the chat draft with blinking cursor, left-aligned
+    ctx.textAlign = 'left';
+    const displayText = chatDraft + (cursorVisible ? '|' : '');
+    ctx.fillText(displayText, messageX, draftY);
+}
     }
 
+
     if (gameState.state === 'playing') {
+        ctx.fillText("~ shows controls", VIRTUAL_WIDTH-120, 20);
         ctx.font = `${20 * scaleFactor}px Consolas`;
         ctx.fillStyle = 'black';
         ctx.textAlign = 'left';
